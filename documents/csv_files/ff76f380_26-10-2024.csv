@@ -1,0 +1,4 @@
+﻿S. No.,Hotel Name,Category Name,Category_id,Max Accomodation,Adults Allowed,Childs Allowed,Child With Bed(yes/no),Single Occupany  Price,Double Occupany  Price,Triple Occupany  Price,Four Occupany  Price,Child with no bed price
+1,DoubleTree by Hilton Hotel (Minsk),Deluxe Room (king Bed),120,3,2,1,CNB,1000,2000,3000,10000,200
+2,DoubleTree by Hilton Hotel (Minsk),Deluxe Room (twin Bed),121,3,2,1,CWB,1100,2100,4100,,
+3,DoubleTree by Hilton Hotel (Minsk),Suit River view (King Bed),122,3,2,1,CNB,1200,2200,5200,,220

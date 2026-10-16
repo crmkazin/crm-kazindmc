@@ -1,0 +1,3 @@
+Category ID,Room Category Name,Room Size,Max Occupancy,Adults Allowed,Childs Allowed,Child With Bed (CWB/CNB/NA),Date From,Date To,Single Occupancy Price,Double Occupancy Price,Triple Occupancy Price,Four Occupancy Price,CWB
+15,Deluxe Room (king Bed),,2,2,1,CWB,01/01/24,31/12/24,45000,51000,,,5000
+16,Deluxe Room (Twin Bed),,2,2,0,NA,01/01/24,31/12/24,55000,62000,,,0

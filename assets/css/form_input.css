@@ -1,0 +1,323 @@
+    th.center.sorting {
+    font-size: 12px;
+    }
+
+    th.center.sorting_asc {
+        font-size: 12px;
+    }
+
+    tr.gradeX.odd {
+        font-size: 12px;
+    }
+
+    tr.gradeX.even {
+        font-size: 12px;
+    }
+
+    .from_date_input,.to_date_input{
+        position: absolute;
+        top: 50%;
+        border: none;
+        transform: translateY(-50%);
+        right: 6px;
+    }
+    
+    .card-head {
+        background-color: #fff !important;
+        border-bottom: none!important;
+        padding: 5px;
+        color: #fff;
+        border-radius: 5px;
+    }
+
+    .card-head header {
+        /* padding: 10px;
+        font-size: 18px;
+        color:#fff !important;
+        font-weight: 600; */
+        display: none, !important;;
+    }
+
+    table.dataTable.dtr-column>tbody>tr>td.control:before, table.dataTable.dtr-column>tbody>tr>th.control:before{
+        background-color: #041af0 !important;
+    }
+
+    .card:hover {
+        transform: translateY(-2px);
+        transition: 0.2s ease-in-out;
+        cursor: pointer;
+    }
+     .filter-dropdown {
+        display: none;
+        background-color: #ffffff;
+        max-width: 400px;
+        width: 400px;
+        position: absolute;
+        right: 20px;
+        padding: 20px;
+        z-index: 8;
+        border: solid 1px #ccc;
+        top: 0%;
+        box-shadow: 0 0 3px #ccc;
+    }
+
+    .filter-dropdown.active {
+        display: block;
+    }
+
+    .filter-btn {
+        position: relative;
+        margin-left: 25px;
+        color: #262A2A;
+        border: 1px solid #E8E8E8;
+        padding: 9px 15px;
+        border-radius: 5px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0px 4px 4px 0px rgba(219, 219, 219, 0.2509803922);
+    }
+
+
+    /* .content {
+        margin-top: 8px;
+        background-color: #f6f6f6;
+        padding: 8px 40px; */
+        /* display: none; */
+    /* } */
+
+      .content {
+        margin-top: 8px;
+        background-color: #f6f6f6;
+        padding: 8px 40px;
+        width: 100%;
+        margin-left: 1px;
+    }
+
+    .accordion li.active .content {
+        display: none;
+        transition: all 0.5s;
+    }
+
+    .accordion li {
+        cursor: pointer;
+        list-style: none;
+        margin-top: 8px;
+    }
+
+    .filter-dropdown h3 {
+        font-weight: 500;
+        font-size: 20px;
+    }
+
+    .link {
+        color: #707070;
+        font-weight: 400;
+        font-size: 14px;
+        position: relative;
+    }
+
+    .link .fa {
+        transform: rotate(280deg);
+        font-size: 14px;
+    }
+
+    .filter-buttons {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        padding: 12px 25px;
+    }
+
+    .filter-buttons button {
+        color: rgb(255, 255, 255);
+        font-size: 15px;
+        border: none;
+        padding: 8px 40px;
+        border-radius: 5px;
+    }
+
+    .contact-form {
+        background-color: transparent;
+        position: relative;
+    }
+
+    .input-container {
+        position: relative;
+        margin-bottom: 15px;
+        width: -webkit-fill-available !important;
+    }
+
+    input:-webkit-autofill {
+        -webkit-box-shadow: 0 0 0 1000px #edf1f5 inset !important;
+
+        transition: background-color 5000s ease-in-out 0s;
+    }
+
+    .input, .select {
+        width: 100%;
+        outline: none;
+        border: 1px solid #ccc;
+        background: none;
+        background-color: #fff;
+        padding: 6px 10px;
+        color: #1d1c1c;
+        font-weight: 500;
+        font-size: 12px;
+        letter-spacing: 0.5px;
+        border-radius: 5px;
+        transition: 0.3s;
+    }
+
+    textarea.input {
+        padding: 0.8rem 1.2rem;
+        min-height: 150px;
+        border-radius: 5px;
+        resize: none;
+        overflow-y: auto;
+    }
+
+    input.input::marker {
+        opacity: 0;
+    }
+
+    .input-container {
+        margin: 8px 0 !important;
+    }
+
+    .input-container label {
+        position: absolute;
+        top: 50%;
+        left: 15px;
+        transform: translateY(-50%);
+        padding: 0 0.4rem;
+        color: #000;
+        font-size: 14px !important;
+        font-weight: 400;
+        pointer-events: none;
+        z-index: 1000;
+        transition: 0.5s;
+    }
+
+    .input::placeholder {
+        color: #ccc !important;
+    }
+
+    .input-container.textarea label {
+        top: 1rem;
+        transform: translateY(0);
+    }
+
+    .input-container span {
+        position: absolute;
+        top: 0;
+        left: 25px;
+        transform: translateY(-50%);
+        font-size: 0.8rem;
+        padding: 0 0.4rem;
+        color: transparent;
+        pointer-events: none;
+        z-index: 500;
+    }
+
+    .input-container span:before,
+    .input-container span:after {
+        content: "";
+        position: absolute;
+        width: 10%;
+        opacity: 0;
+        transition: 0.3s;
+        height: 20px;
+        background-color: #edf1f5;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+    .input-container span:before {
+        left: 50%;
+    }
+
+    .input-container span:after {
+        right: 50%;
+    }
+
+    .input-container.focus .mySelect label {
+        top: 0;
+        transform: translateY(-50%);
+    }
+
+    .input-container.focus label {
+        top: 0;
+        transform: translateY(-50%);
+        left: 25px;
+        font-size: 0.8rem;
+        background-color: #edf1f5;
+    }
+
+    .input-container.focus span:before,
+    .input-container.focus span:after {
+        width: 50%;
+        opacity: 1;
+    }
+
+    .form-row {
+        display: flex;
+        position: relative;
+        justify-content: space-between;
+    }
+
+    .query-date {
+        margin-left: 20px;
+    }
+
+    .query-date input {
+        border-bottom: solid 1.5px #ccc;
+        border-left: none;
+        border-right: none;
+        border-top: none;
+        margin-top: 12px;
+        padding-bottom: 4px;
+    }
+
+    #from,
+    #to,
+    #checkin_from,
+    #checkout_to {
+        border: none;
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        right: 4%;
+    }
+
+    .inputdate {
+        /* color: transparent; */
+        transition: all 0.5s;
+    }
+
+    .input-container.focus .inputdate {
+        color: #222;
+    }
+
+    #accordion .link {
+        cursor: pointer;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px;
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+
+    #accordion .content {
+        display: none;
+        padding: 10px;
+        background-color: #fff;
+        border-left: 2px solid #007bff;
+        margin-bottom: 10px;
+    }
+
+
+    button#toggleBtn:hover {
+        color: #b40000;
+    }

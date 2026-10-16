@@ -1,0 +1,8 @@
+S. No.,Hotel Name,Category Name,Category ID,Max Accommodation,Adults Allowed,Childs Allowed,Child With Bed (CWB/CNB),Single Occupancy Price,Double Occupancy Price,Triple Occupancy Price,Four Occupancy Price,Child with Bed Price
+1,Apartment Molodezhnyy Na Tulebayeva (Almaty),Standard Room (King Bed),437,4,3,1,CWB,1000,2000,3000,,500
+2,Apartment Molodezhnyy Na Tulebayeva (Almaty),Demo 1,637,3,2,1,CNB,1500,1800,,,400
+3,Apartment Molodezhnyy Na Tulebayeva (Almaty),Demo 2,638,3,2,1,CWB,2000,2500,,,550
+4,Apartment Molodezhnyy Na Tulebayeva (Almaty),Demo 3,639,4,3,2,CWB,1800,2500,3200,,450
+5,Apartment Molodezhnyy Na Tulebayeva (Almaty),Demo 4,640,4,3,2,CWB,1000,2000,3000,,500
+6,Apartment Molodezhnyy Na Tulebayeva (Almaty),Test 1,641,3,2,1,CWB,1500,2000,,,550
+7,Apartment Molodezhnyy Na Tulebayeva (Almaty),Test 2,642,4,3,1,CNB,2200,2700,3200,,0

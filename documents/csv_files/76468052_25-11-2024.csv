@@ -1,0 +1,12 @@
+Category ID,Room Category Name,Room Size,Max Occupancy,Adults Allowed,Childs Allowed,Child With Bed (CWB/CNB/NA),Date From,Date To,Single Occupancy Price,Double Occupancy Price,Triple Occupancy Price,Four Occupancy Price,CWB
+1,Guest Room (King Bed),,3,2,1,CWB,01-10-2024,31-12-2024,20000,25000,,,5000
+2,Guest Room (Twin Bed),,2,2,0,NA,01-10-2024,31-12-2024,18000,20000,,,NA
+3,Deluxe Room (King Bed),,3,2,1,CNB,01-10-2024,31-12-2024,25000,30000,,,6000
+4,Deluxe Room (Twin Bed),,4,2,2,CWB,01-10-2024,31-12-2024,30000,35000,,,5000
+5,Suite Room (King Bed),,0,2,1,,,,,,,,
+204,Standard Room (twin Bed),,0,2,0,,,,,,,,
+205,Standard Room (king Bed),,0,2,1,,,,,,,,
+277,KING ONE BEDROOM SUITE,,0,2,1,,,,,,,,
+345,Family Room,,0,4,1,,,,,,,,
+384,Triple Room,,0,3,0,,,,,,,,
+597,Lux Room,,0,3,0,,,,,,,,

@@ -1,0 +1,20 @@
+Category ID,Room Category Name,Room Size,Max Occupancy,Adults Allowed,Childs Allowed,Child Options (CWB/CNB/NA),Date From(dd-mm-yyyy),Date To(dd-mm-yyyy),Single Occupancy Price,Double Occupancy Price,Triple Occupancy Price,Four Occupancy Price,Child Price
+6,Standard Room (Twin Bed),23 sq.m,2,2,0,NA,01-01-2025,31-10-2025,45000,51000,0,0,0
+7,Standard  Room (king Bed),24 sq.m,3,2,1,CNB,01-01-2025,31-10-2025,45000,51000,0,0,6000
+8,Junior Suite (king Bed),30 sq.m ,4,3,2,CNB,01-01-2025,31-10-2025,55000,61000,71000,0,6000
+9,Junior Suite (Twin Bed),30 sq.m ,2,2,0,NA,01-01-2025,31-10-2025,55000,55000,0,0,0
+13,Superior Junior Suite (king Bed),34 sq.m,4,3,2,CNB,01-01-2025,31-10-2025,65000,71000,81000,0,6000
+14,Superior Junior Suite (Twin Bed),34 sq.m,2,2,0,NA,01-01-2025,31-10-2025,65000,65000,0,0,0
+267,Lux Suite (King Bed),44 sq.m,5,4,1,CWB,01-01-2025,31-10-2025,72000,78000,88000,0,6000
+268,Lux Suite (Twin Bed),44 sq.m,2,0,1,NA,01-01-2025,31-10-2025,72000,78000,88000,98000,0
+,,,,,,,,,,,,,
+,,,,,,,,,,,,,
+Category ID,Room Category Name,Room Size,Max Occupancy,Adults Allowed,Childs Allowed,Child Options (CWB/CNB/NA),Date From(dd-mm-yyyy),Date To(dd-mm-yyyy),Single Occupancy Price,Double Occupancy Price,Triple Occupancy Price,Four Occupancy Price,Child Price
+6,Standard Room (Twin Bed),23 sq.m,2,0,0,NA,01-11-2025,31-03-2026,36000,42000,0,0,0
+7,Standard  Room (king Bed),24 sq.m,3,2,1,CNB,01-11-2025,31-03-2026,36000,42000,0,0,6000
+8,Junior Suite (king Bed),30 sq.m ,4,3,2,CWB,01-11-2025,31-03-2026,46000,52000,58000,0,6000
+9,Junior Suite (Twin Bed),30 sq.m ,2,0,0,NA,01-11-2025,31-03-2026,46000,52000,0,0,0
+13,Superior Junior Suite (king Bed),34 sq.m,4,3,2,CWB,01-11-2025,31-03-2026,56000,62000,68000,0,6000
+14,Superior Junior Suite (Twin Bed),34 sq.m,2,2,0,CNB,01-11-2025,31-03-2026,56000,62000,0,0,0
+267,Lux Suite (King Bed),44 sq.m,5,4,1,CWB,01-11-2025,31-03-2026,66000,72000,88000,94000,6000
+268,Lux Suite (Twin Bed),44 sq.m,2,0,0,NA,01-11-2025,31-03-2026,66000,72000,0,0,0

@@ -1,0 +1,1711 @@
+    <style>
+        ul.timeline {
+            list-style-type: none;
+            position: relative;
+        }
+
+        ul.timeline:before {
+            content: ' ';
+            background: #d4d9df;
+            display: inline-block;
+            position: absolute;
+            left: 29px;
+            width: 2px;
+            height: 100%;
+            z-index: 400;
+        }
+
+        ul.timeline>li {
+            margin: 5px 0;
+            padding-left: 10px;
+			border-bottom : 6px solid #FFF;
+        }
+
+        ul.timeline>li:before {
+            content: ' ';
+            background: white;
+            display: inline-block;
+            position: absolute;
+            border-radius: 50%;
+            border: 3px solid #22c0e8;
+            left: 20px;
+            width: 20px;
+            height: 20px;
+            z-index: 400;
+        }
+
+        div.info>div {
+            border: 1px solid #efecec;
+        }
+
+        .lbl-bold {
+            font-weight: 600 !important;
+        }
+
+        .select2-container--bootstrap {
+            box-shadow: 0px 0px 5px 2px #e2e2e3 !important;
+        }
+
+        .select2-container--bootstrap .select2-dropdown--below .select2-results {
+            max-height: 400px;
+            overflow-y: scroll;
+        }
+		#cke_1_contents { height:80px !important; }
+		.alert { padding: .25rem 1.00rem !important; }
+    </style>
+    <script type="text/javascript" src="<?php echo base_url(); ?>/ckeditor/ckeditor.js"></script>
+    <script>
+        CKEDITOR.config.toolbar = [{
+                name: 'basicstyles',
+                groups: ['basicstyles', 'cleanup'],
+                items: ['Bold', 'Italic', 'Strike', '-', 'RemoveFormat']
+            },
+            {
+                name: 'styles',
+                items: ['Styles', 'Format', 'Font', 'FontSize']
+            },
+            {
+                name: 'colors',
+                items: ['TextColor', 'BGColor']
+            },
+            {
+                name: 'paragraph',
+                groups: ['list', 'indent', 'blocks', 'align', 'bidi'],
+                items: ['NumberedList', 'BulletedList', '-', 'Outdent', 'Indent', '-', 'Blockquote', 'CreateDiv', '-',
+                    'JustifyLeft', 'JustifyCenter', 'JustifyRight', 'JustifyBlock', '-', 'BidiLtr', 'BidiRtl',
+                    'Language'
+                ]
+            },
+            '/',
+            {
+                name: 'clipboard',
+                groups: ['clipboard', 'undo'],
+                items: ['Cut', 'Copy', 'Paste', 'PasteText', 'PasteFromWord', '-', 'Undo', 'Redo']
+            },
+            {
+                name: 'insert',
+                items: ['Table']
+            }
+        ];
+    </script>
+
+    <div class="page-wrapper">
+        <!-- start page container -->
+        <div class="container-fluid">
+            <!-- start page content -->
+            <div class="page-content-wrapper">
+                <div class="page-content">
+
+                    <?php echo $this->session->flashdata('message');
+                    unset($_SESSION['message']);
+                    ?>
+                    <div class="row">
+                        <div class="col-sm-12">
+                            <div class="card-box">
+                                <?php 
+                                    $vehicles = [];
+                                    $guides = [];
+                                    $mandatory_services = [];
+                                    $hotel_details = [];
+                                    $family_details = [];
+                                    
+                                    $enquiry_id = base64_decode($this->input->get('enquiry_id'));
+                                    if(array_key_exists('chk_vehicle', $this->input->get())){
+                                        foreach($this->input->get('chk_vehicle') AS $key=>$val){
+                                            $vehicles[] = ['vehicle_id'=>$val,'qnty'=>$this->input->get('vehicle_quantity')[$key]] ;
+                                        }
+                                    }
+                                    if($this->input->get('guide')=='yes'){
+                                        $pattern = '/^guide_languages_/i';
+                                        $guide_arr = array_filter($this->input->get(), function($key) use ($pattern) {
+                                            return preg_match($pattern, $key);
+                                        }, ARRAY_FILTER_USE_KEY );
+                                        $i=0;
+                                        foreach($guide_arr AS $key=>$val){
+                                            $guides[] = ['guide_languages'=>implode(',',$this->input->get($key)),'qnty'=>$this->input->get('guide_quantity')[$i]] ;
+                                            $i++;
+                                        }                                        
+                                    }
+                                    foreach($this->input->get('hdn_mandatory_services') AS $key=>$val){
+                                        $mandatory_services[] = ['service'=>$val,'qnty'=>$this->input->get('mandatory_services_qnty')[$key]];
+                                    }
+                                    $roomData = [];
+
+                                    foreach ($_POST as $key => $value) {
+                                        if (preg_match('/^family_(\d+)_adults$/', $key, $matches)) {
+                                            $i = $matches[1]; // family number
+                                            $adults = $this->input->post("family_{$i}_adults");
+                                            $children = $this->input->post("family_{$i}_child");
+
+                                            if (is_array($adults)) {
+                                                foreach ($adults as $room_no => $adultCount) {
+                                                    $roomData[] = [
+                                                        'family_no' => $i,
+                                                        'room_no' => $room_no + 1,
+                                                        'adults' => (int)$adultCount,
+                                                        'children' => isset($children[$room_no]) ? (int)$children[$room_no] : 0
+                                                    ];
+                                                }
+                                            }
+                                        }
+                                    }
+
+
+                                    // foreach ($adults as $key => $val) {
+                                    //     $family_details[] = (object)[
+                                    //         'adults' => (int)$val,
+                                    //         'children' => isset($children[$key]) ? (int)$children[$key] : 0
+                                    //     ];
+                                    // }
+
+                                    foreach($this->input->get('hotel_category') AS $key=>$val){
+                                        $hotel_details[] = ['category'=>$val,'qnty'=>$this->input->get('num_comparison_hotels')[$key],
+                                                                'room_type'=>$this->input->get(str_replace(' ','_', strtolower($val)).'_room_type')];
+                                    }
+                                    //echo '<pre>';print_r($hotel_details);exit;
+                                    $same_hotels_all_nights = (array_key_exists('chk_all_hotels', $this->input->get()))?'yes':'no';
+                                    $quotation_save = ['roe'=>$this->input->get('roe'),'currency'=>$this->input->get('hdn_roe_name'),
+                                        'city_of_origin'=>$this->input->get('origin_city'),'city_of_arrival'=>$this->input->get('arrival_city'),
+                                        'arrival_airline'=>$this->input->get('arrival_airline'),'arrival_time'=>$this->input->get('arrival_time'),
+                                        'departure_city'=>$this->input->get('departure_city'),'departing_airline'=>$this->input->get('departing_airline'),
+                                        'departing_time'=>$this->input->get('departing_time'),'city_details'=>implode(',',$this->input->get('arrival_cities')),
+                                        'airport_pick_drop'=>$this->input->get('airport_pick_drop'),'vehicles'=>json_encode($vehicles),
+                                        'luggage_vehicle'=>implode(',',$this->input->get('hdn_luggage_vehicle')),'guide_details'=>json_encode($guides),
+                                        'mandatory_services'=>json_encode($mandatory_services),'group_type'=>$this->input->get('group_type'),
+                                        'created_by'=>$this->session->userdata('id'),'markup_split'=>$this->input->get('markup_split'),
+                                        'same_hotels_all_nights'=>$same_hotels_all_nights,'hotel_details'=>json_encode($hotel_details),'enquiry_id'=>$enquiry_id,
+                                        'family_details'=>json_encode($roomData)];
+                                    
+                                    $start_date = new DateTime($details->check_in_date);
+                                    $last_date = new DateTime($details->check_out_date);
+                                    $diff = $last_date->diff($start_date);
+                                    $nights = $diff->d;
+                                ?>
+                                <input type="hidden" value="<?=$this->input->get('origin_city');?>" name="origin_city" id="origin_city">
+                                <input type="hidden" value="<?=$this->input->get('arrival_city');?>" name="arrival_city" id="arrival_city">
+                                <input type="hidden" value="<?=$this->input->get('arrival_airline');?>" name="arrival_airline" id="arrival_airline">
+                                <input type="hidden" value="<?=$this->input->get('arrival_time');?>" name="arrival_time" id="arrival_time">
+                                <input type="hidden" value="<?=$this->input->get('departure_city');?>" name="departure_city" id="departure_city">
+                                <input type="hidden" value="<?=$this->input->get('departing_airline');?>" name="departing_airline" id="departing_airline">
+                                <input type="hidden" value="<?=$this->input->get('departing_time');?>" name="departing_time" id="departing_time">
+                                <input type="hidden" value="<?=$this->input->get('airport_pick_drop');?>" name="airport_pick_drop" id="airport_pick_drop">
+                                <input type="hidden" value="<?= htmlspecialchars(json_encode($mandatory_services), ENT_QUOTES, 'UTF-8'); ?>" name="mandatory_services" id="mandatory_services">
+
+                                <div class="card-head p-3 mt-3" style="background-color: #3333 !important; color:#fff !important;">
+                                    <header>Create Quotation (<?php echo $nights.' Nights / '.($nights+1).' Days'; ?>)</header>
+                                    <div class="tools">
+                                    </div>
+                                </div>
+								
+                                <div class="card-body row">                                   
+
+                                    <div class="col-lg-8" style="background-color:#f8fcff;">
+                                        <?php echo form_open_multipart('', ['id' => 'frm-timeline']); ?>
+                                        <input type="hidden" name="enquiry_id" value="<?=$details->id ?>">
+                                        <input type="hidden" name="hotel_status" value="<?=$this->input->get('hotel') ?>">
+                                        <input type="hidden" name="hdn_group_type" value="<?=$this->input->get('hdn_group_type') ?>">
+                                        <div class="row">
+
+                                            <div class="col-md-10">
+                                                <h4 class="lbl-bold" style="text-align:center;">Quotation Itinerary Timeline</h4>
+                                            </div>
+                                            
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-12">
+                                                <ul class="timeline">
+                                                    <?php 
+                                                    if (!empty($template_content)) {
+                                                        $i = 0;
+                                                        $itinerary_date = $template_content[0]->date;
+                                                        //$start_date = $details->check_in_date;
+                                                        $luggage_vehicle_price = 0;
+                                                        $final_ticket_price = 0;
+                                                        $guide_pick_drop = [];
+                                                        $guide_days = [];
+                                                        $quotation_itinerary = [];
+                                                        $temp_itinerary = [];
+                                                        foreach ($template_content as $key => $list) {
+                                                            if ($key == 0 || $itinerary_date != $list->date) {
+                                                    ?>
+                                                                <li class="itinerary_li">
+                                                                    <input type="radio" name="rdo-edit" class="rdo">
+                                                                    <span class="label label-primary itinerary_date"
+                                                                        style="padding:5px;">Day : <?= $i + 1 ?></span>
+                                                                    <span style="display:inline-flex;">
+                                                                        <input type="text" name=""
+                                                                            class="ms-1 mdl-textfield__input dt-dateformat-show"
+                                                                            value="<?php echo date('d-M-Y', strtotime($list->date)); ?>"
+                                                                            style="width:35%;" readonly>
+                                                                        <input type="date" value="<?php echo $list->date; ?>"
+                                                                            class="ms-1 dt-dateformat" name="itinerary_date[]"
+                                                                            style="width: 6%;background: transparent;border: 0;">
+                                                                    </span>
+                                                                    <span id="" style="margin-left: -150px; font-weight: bold;"><?php echo date('l', strtotime($list->date)); ?></span>
+
+                                                                    <br>
+                                                                <?php }  
+																
+                                                                if($list->content != ''){
+                                                                ?>
+                                                                <div style="margin:0 0 !important;">
+                                                                    <i title="Remove" class="fa fa-close edit-remove"
+                                                                        style="color:red;cursor: pointer;float: right;margin-top: 5px;position:relative;"></i>
+                                                                    <label
+                                                                        class="lbl-bold lbl-edit lbl-time"><?php echo $list->time; ?></label><strong>Hrs</strong>
+                                                                    <span><i class="fa fa-edit edit"
+                                                                            style="cursor:pointer;display:inline-flex; width:2%;"
+                                                                            title="Edit"
+                                                                            id="<?php echo $list->id; ?>"></i></span>
+                                                                    <span class="txt-edit"
+                                                                        style="display:inline-table; width:85%;padding:3px;"><?php echo urldecode($list->content); ?></span>
+                                                                    
+                                                                    <?php if($key==0 && !empty($airport_transfer_in)){
+                                                                                $airport_transfer = $airport_transfer_in;
+                                                                                $input_name = 'hdn_airport_in_total';
+                                                                                $airport_pick_drop = '<span style="color:#ef2100;"><i class="fa fa-plane"></i> Airport Pick</span>';                                                                                
+                                                                                $guide_pick_drop[] = '0.5';
+                                                                            }elseif($key==count($template_content)-1 && !empty($airport_transfer_out)){
+                                                                                $airport_transfer = $airport_transfer_out;
+                                                                                $input_name = 'hdn_airport_out_total';
+                                                                                $airport_pick_drop = '<span style="color:#ef2100;"><i class="fa fa-plane"></i> Airport Drop</span>';
+                                                                                $guide_pick_drop[] = '0.5';
+                                                                            }else{
+                                                                                $airport_transfer = [];
+                                                                            }
+                                                                if(!empty($airport_transfer)){
+                                                                            ?>
+                                                                            <div class="alert alert-info" style="padding:4px;text-transform:capitalize;font-size:12px;text-align:center;">
+                                                                                <div class="row" style="line-height: 10px;margin-top: 2px;font-weight:600;margin-bottom:6px;">
+                                                                                    <div class="col-md-2"><?=$airport_pick_drop?></div>
+                                                                                    <div class="col-md-5">Vehicle Name</div>
+                                                                                    <div class="col-md-2">Price</div>
+                                                                                    <div class="col-md-1">Qty.</div>
+                                                                                    <div class="col-md-2">Total</div>
+                                                                                </div>
+                                                                                <?php 
+                                                                                $total = 0;
+                                                                                foreach($airport_transfer AS $airport_in){ 
+                                                                                        $total = $total + ($airport_in['price']*$airport_in['quantity']);
+                                                                                ?>
+                                                                                <div class="row" style="line-height: 15px;margin-top: 2px;">
+                                                                                        <div class="col-md-2"></div>
+                                                                                        <div class="col-md-5"><?=$airport_in['vehicle_name']?> </div>
+                                                                                        <div class="col-md-2"><?=$airport_in['price']?></div>
+                                                                                        <div class="col-md-1"><?=$airport_in['quantity']?></div>
+                                                                                        <div class="col-md-2"><?=$airport_in['price']*$airport_in['quantity']?></div>																				
+                                                                                </div>
+                                                                                <?php } ?>
+                                                                                <input type="hidden" class="total" id="<?=$input_name ?>" name="<?=$input_name?>" value="<?=$total ?>">
+                                                                            </div>
+                                                                            <?php 
+                                                                            
+                                                                            if($this->input->get('luggage_vehicle')=='yes'){ 
+                                                                                    $lugguage_vehicle = $this->input->get('hdn_luggage_vehicle');
+                                                                                ?>
+                                                                                <div class="alert alert-info" style="padding:4px;text-transform:capitalize;font-size:12px;text-align:center;">
+                                                                                    <!--div class="row" style="line-height: 10px;margin-top: 2px;font-weight:600;margin-bottom:6px;">
+                                                                                        <div class="col-md-7"><span style="color:#ef2100;float:left;"><i class="fa fa-car"></i> Luggage Vehicle</span>Vehicle Name</div>
+                                                                                        <div class="col-md-2">Price</div>
+                                                                                        <div class="col-md-1">Qty.</div>
+                                                                                        <div class="col-md-2">Total</div>
+                                                                                    </div-->
+                                                                                <?php foreach($lugguage_vehicle AS $luggage_list){
+                                                                                        $luggage_arr = explode('__',$luggage_list);
+                                                                                    ?>
+                                                                                    <div class="row" style="line-height: 15px;margin-top: 2px;">
+                                                                                        <div class="col-md-7"><span style="color:#ef2100;float:left;"><i class="fa fa-car"></i> Luggage Vehicle</span><?=$luggage_arr[0]?> </div>
+                                                                                        <div class="col-md-2"><?=$luggage_arr[1]?></div>
+                                                                                        <div class="col-md-1"><?=$luggage_arr[2]?></div>
+                                                                                        <div class="col-md-2"><?php echo $luggage_vehicle_price = $luggage_arr[1]*$luggage_arr[2]?></div>																				
+                                                                                    </div>
+                                                                                    
+                                                                                    <input type="hidden" name="hdn_luggage_price" id="hdn_luggage_price" value="<?php echo $luggage_vehicle_price = $luggage_vehicle_price + ($luggage_arr[1]*$luggage_arr[2]); ?>"/>
+                                                                                <?php } ?>
+                                                                                </div>
+                                                                            <?php } ?>
+
+
+
+                                                                    <?php }  ?>	
+																	
+                                                                    <input type="hidden" name="itinerary_title_<?= $i ?>[]" value="<?=urldecode($list->content); ?>">
+                                                                    <input type="hidden" name="itinerary_title_search_<?= $i ?>[]" value="<?= urldecode($list->content) ?>">
+                                                                    <input type="hidden" name="itinerary_sites_id_<?= $i ?>[]" value="0">
+                                                                    <input type="hidden" name="itinerary_text_<?= $i ?>[]" value="<?= urldecode($list->content) ?>">
+                                                                    <input type="hidden" name="itinerary_remarks_<?= $i ?>[]" value="<?= $list->remarks ?>">
+                                                                    <input type="hidden" name="itinerary_time_<?= $i ?>[]" value="<?= $list->time ?>">
+                                                                </div>
+                                                            <?php }
+                                                                    $itinerary_sites_id = $this->input->get('hdn_site_id');
+                                                                    $itinerary_sites = $this->input->get('hdn_itinerary_content');
+                                                                    $itinerary_activities = $this->input->get('hdn_activities');
+                                                                    if($this->input->get('chk_vehicle')<>''){
+                                                                        $transport_id = implode(',',$this->input->get('chk_vehicle'));
+                                                                        $where = ' transportation_costs.transport_id IN ('.$transport_id.') AND transportation_costs.type IN ("full-day")';
+                                                                        $where .= ' AND date(transportation_costs.valid_from) <= "'.$details->check_in_date.'" AND date(transportation_costs.valid_to) >= "'.$details->check_out_date.'"';
+                                                                        $join = [['type' => 'LEFT', 'join_table' => 'transportation', 'condition' => 'transportation.id = transportation_costs.transport_id'],];
+                                                                        $transportation_cost = $this->common_model->get_data('transportation_costs','', '', '*',$where, '', $count = false,$join);
+                                                                    }
+
+                                                                    $k=0;
+
+                                                                $outsidecity_flag = $insidecity_flag = true;
+                                                                if(array_key_exists($key, $itinerary_sites_id)){
+                                                                    $guide_days[$key] = 1;
+                                                                    
+                                                                    foreach($itinerary_sites_id[$key] AS $k=>$site_id){
+                                                                        $outsidecity_transportation = [];
+                                                                        if($this->input->get('chk_vehicle')<>'' && is_numeric($site_id)){
+                                                                            $where = 'outsidecity_transportation_costs.sites_id = '.$site_id.' AND outsidecity_transportation_costs.transport_id IN ('.$transport_id.') AND outsidecity_transportation_costs.status = "active"';
+                                                                            $where .= ' AND date(outsidecity_transportation_costs.valid_from) <= "'.$details->check_in_date.'" AND date(outsidecity_transportation_costs.valid_to) >= "'.$details->check_out_date.'"';
+                                                                            $join = [['type' => 'LEFT', 'join_table' => 'transportation', 'condition' => 'transportation.id = outsidecity_transportation_costs.transport_id'],];
+                                                                            $outsidecity_transportation = $this->common_model->get_data('outsidecity_transportation_costs','', '', '*',$where, '', $count = false,$join);
+                                                                        }
+
+                                                            ?>
+																
+                                                        <div style="margin:0 0 !important;">
+                                                                <i title="Remove" class="fa fa-close edit-remove"
+                                                                        style="color:red;cursor: pointer;float: right;margin-top: 5px;position:relative;"></i>
+                                                                <!--label
+                                                                        class="lbl-bold lbl-edit lbl-time"><?php //echo $list->time; ?></label><strong>Hrs</strong-->
+                                                                <span><i class="fa fa-hand-o-right"
+                                                                                style="cursor:pointer;display:inline-flex; width:2%;"
+                                                                                title="Edit"
+                                                                                id="<?php echo $list->id; ?>"></i></span>
+                                                                <span class="txt-edit" style="display:inline-table; width:85%;padding:3px;font-weight:600;"><?php echo urldecode($itinerary_sites[$key][$k]); ?></span>
+                                                                <?php  
+                                                                $temp_itinerary['itinerary'][] = ['site_id'=>$itinerary_sites_id[$key][$k],'site_text'=>$itinerary_sites[$key][$k]];
+                                                                
+                                                                $activities_total = 0;
+                                                                if($itinerary_activities[$key][$k] != ''){                                                                    
+                                                                    ?>
+                                                                    <ol style="border: 1px solid #e1e1e1;border-radius: 5px;background-color: #fffde6;line-height:1.1rem;">
+                                                                    <?php
+                                                                        $temp_itinerary['itinerary_activities'][] = $itinerary_activities[$key][$k];
+                                                                        $activities = explode(',',$itinerary_activities[$key][$k]);
+                                                                        foreach($activities AS $a=>$act){
+                                                                    ?>
+                                                                        <li class="<?php echo (($a==0)?'mt-2':''); ?>">
+                                                                            <?php 
+                                                                                $a = explode('_|_',$act);
+                                                                                $act_name_prices = explode('__',$a[0]);
+                                                                                $persons = explode('__',$a[1]);
+                                                                                echo '<label style="width:25%;"><strong style="font-weight:600;">'.$act_name_prices[0].'</strong></label>';
+                                                                                echo '<label style="width:25%;"><strong style="font-weight:600;">Adult Price:</strong> '.$act_name_prices[1].' x '.$persons[0].'</label>';
+                                                                                echo '<label style="width:25%;"><strong style="font-weight:600;">Child Price:</strong> '.$act_name_prices[2].' x '.$persons[1].'</label>';
+                                                                                echo '<label style="width:25%;"><strong style="font-weight:600;">Total:</strong> ';
+                                                                                echo ((int)$act_name_prices[1]*(int)$persons[0])+(($persons[1]!=0)?((int)$act_name_prices[2]*(int)$persons[1]):0);
+                                                                                echo '</label>';
+                                                                                
+                                                                                $activities_total = $activities_total + ((int)$act_name_prices[1]*(int)$persons[0])+(($persons[1]!=0)?((int)$act_name_prices[2]*(int)$persons[1]):0);
+                                                                            ?>
+                                                                        </li>
+                                                                        <input type="hidden" name="itinerary_activities_<?= $i ?>[]" value="<?= $act_name_prices[0]. ' Adult: '.$persons[0].' Child: '.$persons[1];  ?>">
+                                                                    <?php } ?>
+                                                                    </ol>
+                                                                        <?php }else{ ?> 
+                                                                            <input type="hidden" name="itinerary_activities_<?= $i ?>[]" value="">
+                                                                        <?php } ?>
+                                                                        <input type="hidden" name="hdn_activities_total[]" value="<?php echo $activities_total ?>"/>
+                                                                <?php
+                                                                        $qnty = $this->input->get('vehicle_quantity[]');
+                                                                        $vehicles = $this->input->get('chk_vehicle[]');
+                                                                        if(!empty($outsidecity_transportation && $outsidecity_flag)){
+                                                                        ?>
+                                                                        <div class="alert alert-info" style="padding:4px;text-transform:capitalize;font-size:12px;text-align:center;">
+                                                                        <div class="row" style="line-height: 10px;margin-top: 2px;font-weight:600;margin-bottom:6px;">
+                                                                        <div class="col-md-2"><span style="color:#ef2100;"><i class="fa fa-taxi"></i> Outside City</span></div>
+                                                                        <div class="col-md-3">Vehicle Name</div><div class="col-md-1">Price</div><div class="col-md-1">Toll</div>
+                                                                        <div class="col-md-2">Parking</div><div class="col-md-1">Qty.</div><div class="col-md-2">Total</div></div>
+                                                                        <?php $transportation_total = 0;
+                                                                        foreach($outsidecity_transportation AS $d) {
+                                                                                $key_index = array_search($d->id,$vehicles);
+                                                                                if($key_index !== false){
+                                                                                    $total = ($d->price + $d->toll_price + $d->parking_price) * $qnty[$key_index];
+                                                                        ?>
+                                                                                    <div class="row" style="line-height: 15px;margin-top: 2px;">
+                                                                                    <div class="col-md-2"></div>
+                                                                                    <div class="col-md-3"><?=$d->vehicle_name?></div><div class="col-md-1"><?=$d->price?></div><div class="col-md-1"><?=$d->toll_price?></div>
+                                                                                    <div class="col-md-2"><?=$d->parking_price?></div><div class="col-md-1"><?=$qnty[$key_index]?></div><div class="col-md-2"><?=$total?></div></div>
+                                                                        <?php
+                                                                                    $transportation_total = $transportation_total + $total;
+                                                                        } ?>
+                                                                                <input type="hidden" class="total" name="hdn_transportation_outside_<?=$key?>" value="<?=$transportation_total?>"></div>
+                                                                        <?php	
+                                                                        } $outsidecity_flag = false; 											
+                                                                } ?>
+                                                                <?php
+                                                                    if(!empty($transportation_cost) && $insidecity_flag){ ?>
+                                                                        <div class="alert alert-info" style="padding:4px;text-transform:capitalize;font-size:12px;text-align:center;">
+                                                                        <div class="row" style="line-height: 10px;margin-top: 2px;font-weight:600;margin-bottom:6px;">
+                                                                        <div class="col-md-2"><span style="color:#ef2100;"><i class="fa fa-taxi"></i> Inside City</span></div>
+                                                                        <div class="col-md-5">Vehicle Name</div><div class="col-md-2">Full Day Price</div>
+                                                                        <div class="col-md-1">Qty.</div><div class="col-md-2">Total</div></div>
+                                                                        <?php
+                                                                $transportation_total = 0;
+                                                                foreach($transportation_cost AS $d) {
+                                                                    $key_index = array_search($d->id,$vehicles);
+                                                                    if($key_index !== false){
+                                                                        $total = ($d->price * $qnty[$key_index]); ?>
+                                                                        <div class="row" style="line-height: 15px;margin-top: 2px;">
+                                                                        <div class="col-md-2"></div>
+                                                                        <div class="col-md-5"><?=$d->vehicle_name?></div><div class="col-md-2"><?=$d->price?></div>
+                                                                        <div class="col-md-1"><?=$qnty[$key_index]?></div><div class="col-md-2"><?=$total?></div></div>
+                                                                    <?php   $transportation_total = $transportation_total + $total;
+                                                                    }
+                                                                } $insidecity_flag = false; ?>
+                                                                <input type="hidden" class="total" name="hdn_transportation_inside_<?=$key ?>" value="<?=$transportation_total?>"></div>
+                                                        <?php } ?>
+                                                    <input type="hidden" name="itinerary_title_<?= $i ?>[]" value="<?php echo urldecode($itinerary_sites[$key][$k]); ?>">
+                                                    <input type="hidden" name="itinerary_title_search_<?= $i ?>[]" value="<?php echo urldecode($itinerary_sites[$key][$k]); ?>">
+                                                    <input type="hidden" name="itinerary_sites_id_<?= $i ?>[]" value="<?php echo urldecode($itinerary_sites_id[$key][$k]); ?>">
+                                                    <input type="hidden" name="itinerary_text_<?= $i ?>[]" value="<?php echo urldecode($itinerary_sites[$key][$k]); ?>">
+                                                    <input type="hidden" name="itinerary_remarks_<?= $i ?>[]" value="">
+                                                    <input type="hidden" name="itinerary_time_<?= $i ?>[]" value="">
+
+                                                </div>														
+                                    <?php  
+                                        
+                                        $where = ' sites.id = '.$site_id;
+                                        $sites_ticket = $this->common_model->get_data('sites','', '', '*',$where, '', $count = false);   
+                                        //echo '<pre>';print_r($sites_ticket);
+                                        if($sites_ticket[0]->entry_ticket == 'yes'){ ?>
+                                        <div class="alert alert-info" style="padding:4px;text-transform:capitalize;font-size:12px;text-align:center;">
+                                            <div class="row" style="line-height: 10px;margin-top: 2px;font-weight:600;margin-bottom:6px;">
+                                            <div class="col-md-2"><span style="color:#ef2100;"><i class="fa fa-file-text"></i> Entry Ticket</span></div>
+                                            <div class="col-md-5">Adults Cost</div><div class="col-md-2">Child Cost</div>
+                                            <div class="col-md-2">Total</div>    
+                                        </div>    
+                                        <?php 
+                                            $adults_num = $this->input->get('number_of_adults');
+                                            $child_num = $this->input->get('number_of_child');
+                                            if($sites_ticket[0]->number_of_persons == '0'){
+                                                $adult_ticket = $sites_ticket[0]->entry_ticket_fee;
+                                                $child_ticket = $sites_ticket[0]->child_entry_ticket_fee;
+                                                $total_tickets = ((int)$adults_num*(int)$adult_ticket)+((int)$child_num*(int)$child_ticket)
+                                                ?>
+                                                <div class="row"><div class="col-md-2"></div>
+                                                <div class="col-md-5"><?php echo ((int)$adults_num*(int)$adult_ticket) ?></div><div class="col-md-2"><?php echo ((int)$child_num*(int)$child_ticket); ?></div>
+                                                <div class="col-md-2"><?php echo $total_tickets; ?></div></div>
+                                                
+                                        <?php $final_ticket_price = $final_ticket_price + $total_tickets;  }
+                                            else if($sites_ticket[0]->number_of_persons != '0'){ 
+                                                $persons_group = ceil(($adults_num+$child_num) / $sites_ticket[0]->number_of_persons);
+                                                $total_tickets = $persons_group * $sites_ticket[0]->group_entry_ticket_fee ;
+                                                ?>
+                                                <div class="row"><div class="col-md-2"></div>
+                                                <div class="col-md-5">(Group)</div><div class="col-md-2">(Group)</div>
+                                                <div class="col-md-2"><?php echo $total_tickets; ?></div></div>   
+                                        <?php   $final_ticket_price = $final_ticket_price + $total_tickets; }
+                                        ?>
+                                        </div>
+                                        
+                                        <?php  }
+                                        } } else { $guide_days[$key] = 0; }
+                                            $itinerary_date = $list->date;
+                                            if (!array_key_exists($key + 1, $template_content) || $itinerary_date != $template_content[$key + 1]->date) { 
+                                                $quotation_itinerary['itinerary_sites_id_'.$i] = $temp_itinerary;
+                                                $temp_itinerary = [];
+                                            ?>
+                                            </li>
+                                        <?php $i++; /*$start_date = date('Y-m-d', strtotime($start_date)+(24*60*60));*/
+                                            }
+                                    } ?>
+                            <input type="radio" name="rdo-edit" class="rdo hide" value="new">
+                                <?php } //echo '<pre>';print_r($quotation_itinerary); ?>
+                            
+                        </ul>
+                    </div>
+                                <!--div class="col-md-2">Remarks</div-->
+                    <div class="col-lg-12 p-t-20 text-right">
+                        <button type="button" id="btn-submit-save"
+                            class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect m-b-10 m-r-20 btn-info">Save</button>
+                        <button type="button" id="btn-submit"
+                            class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect m-b-10 m-r-20 btn-primary">Email</button>
+                    </div>
+                    <div class="col-lg-12 p-t-20 text-right">
+                        <div id="msg_div"></div>
+                    </div>
+                </div>
+                                        
+                        <input type="hidden" id="hdn-operational-days" value="">
+                        <input type="hidden" name="markup_percentage" value="<?=$this->input->get('markup_percentage')?>">
+                        <input type="hidden" name="hdn_final_ticket_price" id="hdn_final_ticket_price" value="<?php echo $final_ticket_price; ?>"/>
+                        <?php echo form_close(); ?>
+                    </div>	
+                                    
+                                    <div class="col-lg-4">
+                                        <div id="msg"></div>
+                                        <?php echo form_open_multipart('', ['id' => 'frm1']); ?>
+										
+                                        <div class="row">
+                                            <div class="col-lg-6 p-t-20 hide">
+                                                <div
+                                                    class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                                                    <select name="itinerary_type" id="itinerary_type"
+                                                        class="mdl-textfield__input" style="padding-top:13px;">
+                                                        <option value=""></option>
+                                                        <option value="sitescene">Sightseeing</option>
+                                                        <!--option value="activity">Activity</option>
+                                                        <option value="night-life">Night Life</option>
+                                                        <option value="restaurants">Restaurants</option>
+                                                        <option value="transfers">Transfers</option>
+                                                        <option value="miscellaneous">Miscellaneous</option-->
+                                                    </select>
+                                                    <label class="mdl-textfield__label">Suggestions</label>
+                                                </div>
+                                            </div>
+                                            <div class="col-lg-6 p-t-20 hide">
+                                                <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width"
+                                                    style="padding-top:27px;">
+                                                    <select name="itinerary_values" id="itinerary_values"
+                                                        class="mdl-textfield__input" style="padding-top:13px;">
+                                                        <option value=""></option>
+                                                    </select>
+                                                    <!--label class="mdl-textfield__label">Select..</label-->
+                                                </div>
+                                            </div>
+                                            <div class="col-lg-6 p-t-20 hide">
+                                                <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width"
+                                                    style="display: inline-flex;">
+                                                    <input type="text" name="" class="mdl-textfield__input dt-date-show"
+                                                        value="" style="width:90%;" readonly>
+                                                    <input type="date" id="frm_date" name=""
+                                                        class="mdl-textfield__input dt-date" style="width:7%;">
+                                                    <label class="mdl-textfield__label">Date</label>
+                                                </div>
+                                            </div>
+                                            <div class="col-lg-6 p-t-20 hide">
+                                                <div
+                                                    class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                                                    <input type="time" id="frm_time" name=""
+                                                        class="mdl-textfield__input">
+                                                    <label class="mdl-textfield__label">Time</label>
+                                                </div>
+                                            </div>
+                                            <div class="col-lg-12 hide" id="chk_suggestions"
+                                                style="background-color:#f8fcff;display:none;padding:7px;word-wrap:break-word;">
+
+                                            </div>
+                                            <div class="col-lg-12 p-t-20 hide">
+                                                <label class="" style="font-weight: 600;font-size: 14px">Title</label>
+                                                <textarea class="form-control" name="title" id="title" required=""></textarea>
+                                                <script>
+                                                    CKEDITOR.replace('title');
+                                                </script>
+                                                <br>
+                                            </div>
+											
+                                            <div class="col-lg-8 p-t-2 hide">
+						                    <div id="msg-show" style=""></div>
+                                            </div>
+                                            <div class="col-lg-4 p-t-2 hide">
+                                                <button type="button" class="btn btn-primary" id="btn-add-update" style="float:right;">Add & Update >></button><br>
+                                            </div>
+                                            
+                                            <div class="col-lg-12 p-t-20">
+                                                <div class="panel-group" id="accordion">
+                                                        <div class="">
+                                                                <div class="">
+                                                                        <h6 class="panel-title"><i class="fa fa-edit"></i>
+                                                                        <a data-toggle="collapse" data-parent="#accordion" href="#collapse1">
+                                                                        Inclusions</a>
+                                                                        </h6>
+                                                                </div>
+                                                                <div id="collapse1" class="panel-collapse collapse in">
+                                                                        <div class="panel-body">
+                                                                                <textarea class="form-control" name="inclusions" id="inclusions" required="">
+                                                                                <ul>
+                                                                                        <?php if(!empty($transportation)){ ?>
+                                                                                                <li>Complimentary access to&nbsp;Free-WiFi&nbsp;in the vehicle during tours.</li>
+                                                                                                <li>Welcome with chocolates &amp; refreshing napkins.</li>
+                                                                                                <li>All transfers &amp; sightseeing by private vehicle&nbsp;(&nbsp;<?php echo implode(' , ', array_column($transportation, 'vehicle_name')); ?>&nbsp;)&nbsp;for 12 Hrs (10AM – 10PM Only, Within City Limits)&nbsp;&nbsp;&nbsp;</li>
+                                                                                                <li>All transfers &amp; sightseeing include services of an English-speaking&nbsp;Guide.</li>
+                                                                                        <?php } if(!empty($airport_transfer_in)){  ?>
+                                                                                                <li>Airport meet&nbsp;&amp; greet by our English-speaking staff.</li>
+                                                                                        <?php } 
+                                                                                        $itinerary_html = $this->input->get('hdn_itinerary_content');
+                                                                                        if(!empty($itinerary_html)){
+                                                                                                foreach($itinerary_html AS $html){
+                                                                                                        foreach($html AS $li){
+                                                                                                                echo '<li>'.$li.'</li>';
+                                                                                        }}} ?>
+                                                                                        <li>2 bottles of water per person during all excursions &amp; transfers.</li>
+                                                                                        <li>A parting gift courtesy&nbsp;Kazin DMC.&nbsp;</li>
+                                                                                        <li>Hotel taxes included.</li>
+                                                                                        <li>24 x 7 assistance by our ground staff.</li>
+                                                                                </ul>
+                                                                                </textarea>
+                                                                                <script>
+                                                                                        CKEDITOR.replace('inclusions');
+                                                                                </script>
+                                                                        </div>
+                                                                </div>
+                                                        </div>
+                                                        <div class="">
+                                                                <div class="">
+                                                                        <h6 class="panel-title"><i class="fa fa-edit"></i>
+                                                                        <a data-toggle="collapse" data-parent="#accordion" href="#collapse2">
+                                                                        Exclusions</a>
+                                                                        </h6>
+                                                                </div>
+                                                                <div id="collapse2" class="panel-collapse collapse">
+                                                                        <div class="panel-body">
+                                                                                <textarea class="form-control" name="exclusions" id="exclusions" required="">
+                                                                                <ol><li>Extra excursions. Any expenditure of Personal nature. E.g., Laundry, Tips, phone calls etc.</li><li>Meals, unless or otherwise specified in the above quote.</li><li>Anything not mentioned above</li><li>Entrance charges to Nightclubs, monuments etc.</li><li>Consumption of food &amp; beverages at Nightclub/s.</li><li>Beverage consumption during lunches &amp; dinner.<br></li></ol>
+                                                                                </textarea>
+                                                                                <script>
+                                                                                        CKEDITOR.replace('exclusions');
+                                                                                </script>
+                                                                        </div>
+                                                                </div>
+                                                        </div>
+                                                        <div class="">
+                                                                <div class="">
+                                                                        <h6 class="panel-title"><i class="fa fa-edit"></i>
+                                                                        <a data-toggle="collapse" data-parent="#accordion" href="#collapse3">
+                                                                        Important Notes</a>
+                                                                        </h6>
+                                                                </div>
+                                                                <div id="collapse3" class="panel-collapse collapse in">
+                                                                    <div class="panel-body">
+                                                                        <textarea class="form-control" name="important_notes" id="important_notes" required="">
+                                                                        <ol><li>Airfare is not included and may change at the time of finalization of the booking.</li><li>The above package is based on the exact number of PAX mentioned.</li><li>Check-in &amp; Check-out as per hotel policy.</li><li>The above is just a quotation and is subject to availability &amp; currency fluctuation.</li><li>Above is just a quote and we are not holding reservations.</li><li>Transportation mention is applicable between 10AM-10PM within city limits.</li><li>While we may make recommendations for hotels all around the world, we do not guarantee and are not responsible for the services or the hardware provided by the hotel/s suggested by us. We strongly urge you to do your own research and make an informed choice.</li><li>Security deposit at hotel at the time of check in Depending on hotel it ranges from 100 -200 usd per room .<br></li></ol>
+                                                                        </textarea>
+                                                                        <script>
+                                                                            CKEDITOR.replace('important_notes');
+                                                                        </script>
+                                                                    </div>
+                                                                </div>
+                                                        </div>
+                                                        <div class="">
+                                                                <div class="">
+                                                                        <h6 class="panel-title"><i class="fa fa-edit"></i>
+                                                                        <a data-toggle="collapse" data-parent="#accordion" href="#collapse4">
+                                                                        Cancellation Policy</a>
+                                                                        </h6>
+                                                                </div>
+                                                                <div id="collapse4" class="panel-collapse collapse">
+                                                                        <div class="panel-body">
+                                                                                <textarea class="form-control" name="cancellation_policy" id="cancellation_policy" required="">
+                                                                                <p><strong>Standard FIT Cancellation Policy</strong></p><ul><li style="margin-left: 47.25pt;">Within 72 hrs of departure – 100% Non-Refundable</li><li style="margin-left: 47.25pt;">Before 72 hrs of Departure – Nil Cancellation</li></ul><p><strong>Groups Cancellation Policy - 100% Non-Refundable once booked</strong></p>
+                                                                                </textarea>
+                                                                                <script>
+                                                                                    CKEDITOR.replace('cancellation_policy');
+                                                                                </script>
+                                                                        </div>
+                                                                </div>
+                                                        </div>
+                                                </div>
+                                        </div>
+                                    </div>
+                                        <?php echo form_close(); ?>
+                                    </div>
+                                </div>
+                                <?php 
+                            if($this->input->get('hdn_group_type') == 'family'){
+                                $hotel_costing = $hotel_names = []; $num = 1;
+                                $hotel_nights = [];
+                                /*$pattern = '/^hdn_hotel_ids_/i';
+                                $matches = array_filter($this->input->get(), function($key) use ($pattern) {
+                                    return preg_match($pattern, $key);
+                                }, ARRAY_FILTER_USE_KEY );
+                                //echo '<pre>';print_r($matches);exit;
+                                $hdn_hotel_ids = [];
+                                if(array_key_exists('chk_all_hotels',$this->input->get())){
+                                    $hdn_hotel_ids = $this->input->get('hdn_hotel_ids_0');
+                                }else{
+                                    $nights = 1;
+                                    foreach($matches AS $key=>$arr){
+                                        foreach($arr AS $m){
+                                            $hdn_hotel_ids[] = $m;
+                                        }
+                                    }
+                                }*/
+                                $number_of_nights = $this->input->get('number_of_nights');
+                                $nights = 1;
+                                if(array_key_exists('chk_all_hotels',$this->input->get())){
+                                    $number_of_nights = 1;
+                                    $nights = $this->input->get('number_of_nights');
+                                }
+                            $quotation_hotel_details = [];
+                            $temp_arr = [];
+                            
+                            foreach($this->input->get('hotel_category') AS $category){ 
+                                $hotel_costing = [];
+                                $hotel_names = [];
+                                $temp_arr = ['hotel_category'=>$category];  
+                                ?>
+                                <div class="col-md-12 text-center">
+                                    <h5 class="bold" style="padding: 10px;background-color: #f1f6f9;"><?php echo $category; ?></h5>
+                                </div> 
+                                <?php
+                                for($n=1;$n<=$number_of_nights;$n++){ 
+                                    $temp_arr = $temp_arr+['night'=>$n];
+                                ?>
+                                <div class="card-body row">
+                                                   
+                                    <?php
+                                    $hdn_hotel_ids = $this->input->get('hdn_night_'.$n.'_'.str_replace(' ', '_', strtolower($category)).'_ids');
+                                    foreach($hdn_hotel_ids AS $list){
+                                        if($list == ''){ continue; }
+                                        $where = 'hotels.id = '.$list;
+                                        $hotel_name = $this->common_model->get_data('hotels','', '', 'hotels.name,hotels.id',$where, '', $count = false);
+                                        //$nights = $this->input->get('hdn_hotel_nights')[$key];
+                                        $night_text = ' (Nights)';
+                                        
+                                        $temp_arr_1 = $temp_arr+['hotel_name'=>$hotel_name[0]->name,'hotel_id'=>$hotel_name[0]->id];
+                                        
+                                        if($num==1 && array_key_exists('early_checkin',$this->input->get()) && $this->input->get('early_checkin')=='on'){
+                                            $nights++;
+                                            $night_text = ' (Nights + Early Checkin Night)';
+                                        }
+                                    ?>
+                                            
+                                        <?php if(!empty($this->input->get('night_'.$n.'_category_ids_'.$list)) && $this->input->get('hotel')=='yes'){
+                                                
+                                                $grand_total=0;
+                                                $category_cnt = count($this->input->get('night_'.$n.'_category_ids_'.$list)); ?>
+                                                
+                                                <div class="col-md-6" style="border:1px solid;">
+                                                    <div class="col-md-12 text-center bg-info" style="color:#FFF;font-weight:600;padding:2px;">
+                                                        <h5 class="bold"><?php echo ($this->input->get('hotel')=='yes')?'Hotel Costing ('.ucfirst($hotel_name[0]->name).')':'<label style="color:#ff0202;">Without Hotel</label>'; ?></h5>
+                                                    </div>
+                                        <?php   
+                                        $temp_category = [];
+                                        foreach($this->input->get('night_'.$n.'_category_ids_'.$list) AS $c){
+                                                    $k=0;
+                                                    $category_arr = explode('_', $c);
+                                                    
+                                                    //$where = 'hotel_room_categories.hotel_id = '.$c.' AND hotel_room_categories.status = "active" ';
+                                                    //$join = [['type' => '', 'join_table' => 'hotels', 'condition' => 'hotel_room_categories.hotel_id=hotels.id'],];
+                                                    //$categories = $this->common_model->get_data('hotel_room_categories','', '', 'hotels.name,hotel_room_categories.id',$where, '', $count = false,$join);
+                                                    $cat_key = str_replace(' ', '_', $category);
+                                                    if (!isset($hotel_room_category_names_wise[$cat_key])) {
+                                                        $hotel_room_category_names_wise[$cat_key] = [];
+                                                    }
+                                                    if (!in_array($category_arr[1], $hotel_room_category_names_wise[$cat_key])) {
+                                                        $hotel_room_category_names_wise[$cat_key][] = $category_arr[1];
+                                                    }
+                                        ?>
+                                        
+                                            <div class="row mb-2">
+                                                <div class="col-md-12 bold text-center">&nbsp;</div>
+                                                <div class="col-md-4 bold">Category</div>
+                                                <div class="col-md-8 bold" style="text-align:right;">Costing</div>
+                                            </div>
+
+                                            <div class="row p-2 bg-grey" style="line-height:1.2">             
+                                                <div class="col-md-4" style="font-weight:600;"><?php echo $category_arr[1]; ?></div>
+                                                <div class="col-md-8" style="text-align:right;">
+                                                    <ul style="list-style-type:none;font-size: inherit;line-height: inherit;">
+                                                        <?php 
+                                                        $sub_total = 0;
+                                                        foreach($this->input->get('night_'.$n.'_'.$category_arr[0].'_'.$list.'_hotel_prices') AS $key=>$val){
+                                                                $total=0; 
+                                                                $temp_category[] = ['room_type'=>$val,'room_count'=>$this->input->get($category_arr[0].'_room_cnt')[$key]];
+                                                                foreach($val AS $pr){
+                                                                    $prices = explode(' ',$pr);
+                                                        ?>
+                                                        <li><?php echo $pr; ?> x <?=$nights.$night_text ?> = <label style="font-weight:600;"><?php echo $amt=$nights*$prices[1]; $total=$total+$amt; ?></label></li>
+                                                        <?php } ?>
+                                                        <li class="mb-2">Number Of Rooms: <?=$this->input->get($category_arr[0].'_room_cnt')[$key]; $total = $total * $this->input->get($category_arr[0].'_room_cnt')[$key]; ?></li>
+                                                        <hr style="margin-top:0;margin-bottom:8px;">
+                                                        <?php $sub_total = $sub_total + $total;  
+                                                        }  
+                                                        //echo '<pre>';print_r($temp_category);
+                                                        $temp_arr_1 = $temp_arr_1+['hotel_room_details'=>json_encode([$c=>$temp_category])]; 
+                                                        ?>
+                                                        <li><span style="font-weight: 600;border-top: 1px solid #a19e9e;border-bottom: 1px solid #a19e9e;">Total : <?=$sub_total?></li>
+
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                                <?php $grand_total = $grand_total + $sub_total; 
+                                        
+                                        /*if(array_key_exists($hotel_name[0]->name.'_'.$hotel_name[0]->id,$hotel_nights)){
+                                            $hotel_nights[$hotel_name[0]->name.'_'.$hotel_name[0]->id] = $hotel_nights[$hotel_name[0]->name.'_'.$hotel_name[0]->id]+1;
+                                        }else{
+                                            $hotel_nights[$hotel_name[0]->name.'_'.$hotel_name[0]->id] = 1;
+                                        }*/
+                                        
+                                        }   ?></div> <?php  } 
+                                        $hotel_costing[] = $grand_total;
+                                        $hotel_names[] = $hotel_name[0]->name;//$num++; ?>
+                                            
+                                    <?php 
+                                    array_push($quotation_hotel_details,$temp_arr_1);
+                                    } ?> </div> <?php }  
+                                        $hotel_costing_category_wise[str_replace(' ', '_', $category)] = $hotel_costing;  
+                                        $hotel_names_category_wise[str_replace(' ', '_', $category)] = $hotel_names;
+                                        $hotel_names_category_wise[str_replace(' ', '_', $category)] = $hotel_names;
+                                        
+                                    }
+                                        
+                                //echo '<pre>';print_r($hotel_costing_category_wise);print_r($hotel_names_category_wise);
+                                //echo '<pre>';print_r($quotation_hotel_details);exit;    
+                                ?>
+                                <input type="hidden" name="hotel_costing_category_wise" id="hotel_costing_category_wise" value='<?=json_encode($hotel_costing_category_wise) ?>'>
+                                <input type="hidden" name="hotel_names_category_wise" id="hotel_names_category_wise" value='<?=json_encode($hotel_names_category_wise)?>'>
+                                <input type="hidden" name="hotel_room_category_names_wise" id="hotel_room_category_names_wise" value='<?=json_encode($hotel_room_category_names_wise) ?>'>
+                                
+                                <input type="hidden" name="hotel_nights" id="hotel_nights" value='<?=json_encode($hotel_nights)?>'>
+                        
+                            <?php }
+                            
+                            else if($this->input->get('hdn_group_type') == 'individual'){
+                                $occupancy_arr = ['1(A)'=>'Single','2(A)'=>'Double','3(A)'=>'Triple'];
+                                $divide_by = ['1(A)'=>1,'2(A)'=>2,'3(A)'=>3];
+                                $hotel_costing = $hotel_names = []; $num = 1;
+                                $hotel_nights = [];
+                                
+                                $number_of_nights = $this->input->get('number_of_nights');
+                                $nights = 1;
+                                if(array_key_exists('chk_all_hotels',$this->input->get())){
+                                    $number_of_nights = 1;
+                                    $nights = $this->input->get('number_of_nights');
+                                }
+                                $quotation_hotel_details = [];
+                                $temp_arr = [];
+                            foreach($this->input->get('hotel_category') AS $category){ 
+                                $hotel_costing = [];
+                                $hotel_names = [];
+                                $temp_arr = ['hotel_category'=>$category];
+                                ?>
+                                <div class="col-md-12 text-center">
+                                    <h5 class="bold" style="padding: 10px;background-color: #f1f6f9;"><?php echo $category; ?></h5>
+                                </div> 
+                                <?php
+                                for($n=1;$n<=$number_of_nights;$n++){ 
+                                    $temp_arr = $temp_arr+['night'=>$n];
+                                ?>
+                                <div class="card-body row">
+                                                   
+                                    <?php
+                                    $response_arr = [];
+                                    $hdn_hotel_ids = $this->input->get('hdn_night_'.$n.'_'.str_replace(' ', '_', strtolower($category)).'_ids');
+                                    foreach($hdn_hotel_ids AS $list){
+                                        if($list == ''){ continue; }
+                                        
+                                        $where = 'hotels.id = '.$list;
+                                        $hotel_name = $this->common_model->get_data('hotels','', '', 'hotels.name,hotels.id',$where, '', $count = false);
+                                        //$nights = $this->input->get('hdn_hotel_nights')[$key];
+                                        $night_text = ' (Nights)';
+                                        
+                                        $temp_arr_1 = $temp_arr+['hotel_name'=>$hotel_name[0]->name,'hotel_id'=>$hotel_name[0]->id];
+                                        
+                                        if($num==1 && array_key_exists('early_checkin',$this->input->get()) && $this->input->get('early_checkin')=='on'){
+                                            $nights++;
+                                            $night_text = ' (Nights + Early Checkin Night)';
+                                        }
+                                    ?>
+                                            
+                                        <?php if(!empty($this->input->get('night_'.$n.'_category_ids_'.$list)) && $this->input->get('hotel')=='yes'){
+                                                
+                                                $grand_total=0;
+                                                $category_cnt = count($this->input->get('night_'.$n.'_category_ids_'.$list)); ?>
+                                                
+                                                <div class="col-md-6" style="border:1px solid;">
+                                                    <div class="col-md-12 text-center bg-info" style="color:#FFF;font-weight:600;padding:2px;">
+                                                        <h5 class="bold"><?php echo ($this->input->get('hotel')=='yes')?'Hotel Costing ('.ucfirst($hotel_name[0]->name).')':'<label style="color:#ff0202;">Without Hotel</label>'; ?></h5>
+                                                    </div>
+                                        <?php   
+                                        $temp_category = [];
+                                        foreach($this->input->get('night_'.$n.'_category_ids_'.$list) AS $c){
+                                                    $k=0;                                                    
+                                                    $category_arr = explode('_', $c);
+                                                    //$where = 'hotel_room_categories.hotel_id = '.$c.' AND hotel_room_categories.status = "active" ';
+                                                    //$join = [['type' => '', 'join_table' => 'hotels', 'condition' => 'hotel_room_categories.hotel_id=hotels.id'],];
+                                                    //$categories = $this->common_model->get_data('hotel_room_categories','', '', 'hotels.name,hotel_room_categories.id',$where, '', $count = false,$join);
+                                        ?>
+                                        
+                                            <div class="row mb-2">
+                                                <div class="col-md-12 bold text-center">&nbsp;</div>
+                                                <div class="col-md-4 bold">Category</div>
+                                                <div class="col-md-8 bold" style="text-align:right;">Costing</div>
+                                            </div>
+
+                                            <div class="row p-2 bg-grey" style="line-height:1.2">             
+                                                <div class="col-md-4" style="font-weight:600;"><?php echo $category_arr[1]; ?></div>
+                                                <div class="col-md-8" style="text-align:right;">
+                                                    <ul style="list-style-type:none;font-size: inherit;line-height: inherit;">
+                                                        <?php 
+                                                        
+                                                        $sub_total = 0;
+                                                        foreach($this->input->get('night_'.$n.'_'.$category_arr[0].'_'.$list.'_hotel_prices') AS $key=>$val){
+                                                                $total=0; 
+                                                                $arr_temp = [];
+                                                                $temp_category[] = ['room_type'=>$val,'room_count'=>''];
+                                                                foreach($val AS $pr){
+                                                                    $prices = explode(' ',$pr);                                                                    
+                                                        ?>
+                                                                <li><?php echo $occupancy_arr[$prices[0]] .' Occupancy'; ?> x <?=$nights.$night_text ?> = <label style="font-weight:600;"><?php echo $amt = ceil(($nights*$prices[1])/$divide_by[$prices[0]]); $total=$total+$amt; ?> (PP)</label></li>
+                                                        <?php
+                                                                //$arr_temp[] = [$occupancy_arr[$prices[0]] .' Occupancy' => $amt];
+                                                                $response_arr[$hotel_name[0]->name][$category_arr[1]][] = $occupancy_arr[$prices[0]] .' Occupancy__'.$amt;
+                                                                } 
+                                                                 
+                                                        ?>
+                                                        
+                                                        <hr style="margin-top:0;margin-bottom:8px;">
+                                                        <?php $sub_total = $sub_total + $total;  }  
+                                                        $temp_arr_1 = $temp_arr_1+['hotel_room_details'=>json_encode([$c=>$temp_category])]; 
+                                                        ?>
+                                                        <!--li><span style="font-weight: 600;border-top: 1px solid #a19e9e;border-bottom: 1px solid #a19e9e;">Total : <?php //echo $sub_total?></li-->
+
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                                <?php $grand_total = $grand_total + $sub_total;
+                                        
+                                        } ?></div> <?php  } 
+                                        //$hotel_costing[] = $grand_total;
+                                        //$hotel_names[] = $hotel_name[0]->name;//$num++; ?>
+                                            
+                                    <?php 
+                                    array_push($quotation_hotel_details,$temp_arr_1);
+                                    } ?> </div> <?php }  
+                                        $hotel_costing_category_wise[str_replace(' ', '_', $category)] = $response_arr;                                          
+                                    }
+                                        
+                                    //echo '<pre>';print_r($hotel_costing_category_wise);
+                                    
+                                ?>
+                                <input type="hidden" name="hotel_costing_category_wise" id="hotel_costing_category_wise" value='<?=json_encode($hotel_costing_category_wise) ?>'>
+                                <input type="hidden" name="hotel_nights" id="hotel_nights" value='<?=json_encode($hotel_nights)?>'>
+                                
+                            <?php } 
+                            $quotation_save['itinerary_details'] = json_encode($quotation_itinerary);
+                            ?>
+                            <form id="frm-quotation">
+                                 <input type="hidden" name="quotation_arr" value='<?= htmlspecialchars(json_encode($quotation_save), ENT_QUOTES, 'UTF-8'); ?>' />
+                                <input type="hidden" name="hotel_arr" value='<?= htmlspecialchars(json_encode($quotation_hotel_details), ENT_QUOTES, 'UTF-8'); ?>' />
+                            </form>                                                                               
+                                <div class="card-body row">
+                                    <div class="col-md-12 text-center">
+                                        <h5 class="bold">Guides</h5>
+                                    <div class="row bg-info mb-2" style="color:#FFF;font-weight:600;">    
+                                        <div class="col-md-3" style="font-weight:600;">Guide</div>
+                                        <div class="col-md-3" style="font-weight:600;">Languages</div>
+                                        <div class="col-md-3" style="font-weight:600;">Cost</div>
+                                        <div class="col-md-1" style="font-weight:600;">Number</div>
+                                        <div class="col-md-2" style="font-weight:600;">Duration</div>
+                                    </div>
+                                    </div>
+                                     
+                                    <div class="col-md-12 text-center">
+                                        <?php //echo '<pre>'; print_r($guide_pick_drop); print_r($guide_days);exit;
+                                        $guide_grand_total = 0;
+                                    if($this->input->get('guide')=='yes'){
+                                        $pattern = '/^guide_languages_/i';
+                                        $guide_matches = array_filter($this->input->get(), function($key) use ($pattern) {
+                                            return preg_match($pattern, $key);
+                                        }, ARRAY_FILTER_USE_KEY );
+                                        $j = 0;
+                                        $guide_working_days = 0;
+                                        
+                                        foreach($guide_matches AS $key=>$guide_list){
+                                            sort($guide_list);
+                                            $where = 'LOWER(auxiliary_guide.location) = "'.strtolower($country).'" AND auxiliary_guide.languages = "'.implode(',',$guide_list).'" AND auxiliary_guide.status = "active" ';
+                                            if(array_key_exists('driver_cum_guide', $this->input->get()) && $this->input->get('driver_cum_guide') <> ''){
+                                                $arr_map = ['guide'=>'guide','driver_guide'=>'driver_cum_guide'];
+                                                $where .= ' AND auxiliary_guide.guide_type = "'.$arr_map[$this->input->get('driver_cum_guide')].'"';
+                                            }
+                                            $guide_prices = $this->common_model->get_data('auxiliary_guide','', '', '*',$where, '', $count = false);
+                                            if(!empty($guide_prices)){
+                                                if($guide_prices[0]->guide_type == 'guide'){
+                                                    foreach($guide_days AS $d){
+                                                        if($d == 1) { $guide_working_days = $guide_working_days + 1; }
+                                                    }
+                                                }else if ($guide_prices[0]->guide_type == 'driver_cum_guide'){
+                                                    foreach($guide_days AS $k=>$d){
+                                                        if($k == 0 && $d == 0 && !empty($guide_pick_drop)) { 
+                                                            $guide_working_days = $guide_working_days + 0.5;
+                                                        }else if($k == count($guide_days)-1 && $d == 0 && !empty($guide_pick_drop)){
+                                                            $guide_working_days = $guide_working_days + 0.5;
+                                                        }else if($d==1){
+                                                            $guide_working_days = $guide_working_days + 1;
+                                                        }
+                                                    }
+                                                }
+                                                
+                                        ?>
+                                            <div class="row p-2 bg-grey" style="line-height:1.2">             
+                                                <div class="col-md-3" style="font-weight:600;"><?php echo 'Guide '.($j+1); ?></div>
+                                                <div class="col-md-3" style="font-weight:600;"><?php echo strtoupper(implode(' , ',$guide_list)); ?></div>
+                                                <div class="col-md-3" style="font-weight:600;"><?php echo (!empty($guide_prices))?$guide_prices[0]->day_charge:''; ?></div>
+                                                <div class="col-md-1" style="font-weight:600;"><?php echo $this->input->get('guide_quantity')[$j]; ?></div>
+                                                <div class="col-md-2" style="font-weight:600;"><?=$guide_working_days?></div>
+                                            </div>
+                                        <?php  
+                                            $guide_grand_total = $guide_grand_total + ($guide_prices[0]->day_charge * $this->input->get('guide_quantity')[$j] * ($guide_working_days));
+                                            }else {
+                                                echo 'No Matching Language Guides Found.';
+                                            }
+                                            $j++;
+                                        } ?>
+                                        
+                                        <div class="row" style="background-color: #f5f5f5;font-weight:600;border-top:1px solid;">
+                                            <div class="offset-9 col-md-3" style="font-weight:600;text-align: right;padding: 0 22px;"><?php echo $guide_grand_total; ?></div>
+                                        </div>
+                                     
+                                    <?php } else{ echo 'No Guide'; }?>
+                                    <input type="hidden" id="hdn_guide_grand_total" name="hdn_guide_grand_total" value="<?=$guide_grand_total?>"/>
+                                    </div>  
+                                </div>
+                                
+                                <div class="card-body row">
+                                    <div class="col-md-12 text-center">
+                                        <h5 class="bold">Mandatory Services</h5>
+                                    <div class="row bg-info mb-2" style="color:#FFF;font-weight:600;">    
+                                        <div class="col-md-3" style="font-weight:600;">Name</div>
+                                        <div class="col-md-3" style="font-weight:600;">Cost</div>
+                                        <div class="col-md-3" style="font-weight:600;">Number</div>
+                                        <div class="col-md-3" style="font-weight:600;">Total</div>
+                                    </div>
+                                    </div>
+                                     
+                                    <div class="col-md-12 text-center">
+                                        <?php
+                                        $mandatory_grand_total = 0;
+                                        $j = 0;
+                                        foreach($this->input->get('hdn_mandatory_services') AS $services_list){ 
+                                            $arr = explode('_|_',$services_list);
+                                        ?>
+                                            <div class="row p-2 bg-grey" style="line-height:1.2">             
+                                                <div class="col-md-3" style="font-weight:600;"><?php echo $arr[0]; ?></div>
+                                                <div class="col-md-3" style="font-weight:600;"><?php echo $arr[1]; ?></div>
+                                                <div class="col-md-3" style="font-weight:600;"><?php echo $this->input->get('mandatory_services_qnty')[$j]; ?></div>
+                                                <div class="col-md-3" style="font-weight:600;"><?php echo ($arr[1] * $this->input->get('mandatory_services_qnty')[$j]); ?></div>
+                                            </div>
+                                        <?php 
+                                            $mandatory_grand_total = $mandatory_grand_total + ($arr[1] * $this->input->get('mandatory_services_qnty')[$j]);                                            
+                                            $j++;
+                                        } ?>
+                                        
+                                        <div class="row" style="background-color: #f5f5f5;font-weight:600;border-top:1px solid;">
+                                            <div class="offset-9 col-md-3" style="font-weight:600;text-align: right;padding: 0 22px;"><?php echo $mandatory_grand_total; ?></div>
+                                        </div>
+                                        <input type="hidden" id="hdn_mandatory_grand_total" name="hdn_mandatory_grand_total" value="<?=$mandatory_grand_total?>"/>
+                                    </div>                                    
+                                </div>
+                            </div>
+                        </div>
+        </div>
+         </div>
+    </div>
+</div>
+   
+<script>
+    $(document).ready(function() {
+        $("#itinerary_values").select2({
+            placeholder: "Select.."
+        });
+
+        $("#itinerary_values").on("change", function() {
+            var opts = $(this).val().split("|");
+            var html = '';
+            const v = ["sitescene", "night-life", "activity", "transfers", "miscellaneous"];
+            if (v.indexOf($("#itinerary_type").val()) !== -1) {
+                var labels = ['Name', 'Departing Time', 'Entry Ticket','Days Of Operation'];
+                var class_name;
+                $.each(opts, function(i, val) {
+                    class_name = '';
+                    if(labels[i] == 'Days Of Operation'){
+                        class_name = 'text-capitalize';
+                        if(val == ""){ val = 'monday,tuesday,wednesday,thursday,friday,saturday,sunday'; }
+                        $("#hdn-operational-days").val(val);
+                    }
+                    html += '<label class="bold" style="line-height:0 !important;">' + labels[i] +
+                        ': </label> <span class="suggesstions" style="cursor:pointer; margin-right:5px;border:1px solid #daf8ff;padding:2px;" title="Click to add">' +
+                        val + '</span><br>';
+                    CKEDITOR.instances["title"].setData('<strong>' + opts[0] +
+                        '</strong>');
+                });
+                $("#frm_time").val(opts[2]).parent("div").addClass("is-focused");
+            } else if ($("#itinerary_type").val() === "restaurants") {
+                var labels = ['Name', 'Cuisine', 'Description'];
+                $.each(opts, function(i, val) {
+                    html += '<label class="bold">' + labels[i] +
+                        ': </label> <span class="suggesstions" style="cursor:pointer; margin-right:5px;border:1px solid #daf8ff;padding:2px;" title="Click to add">' +
+                        val + '</span><br>';
+                    CKEDITOR.instances["title"].setData('<strong>' + opts[0] +
+                        '</strong>');
+                });
+            }
+            var id = $(this).find(':selected').attr("data-id");
+            var type = $(this).find(':selected').attr("data-type");
+            /*$.ajax({
+                url: "<?php //echo site_url('get-itinerary-master-remarks'); ?>",
+                type: "post",
+                data: {
+                    'id': id,
+                    'type': type
+                },
+                dataType: 'JSON',
+                //contentType : false,
+                //processData: false,
+                success: function(data) {
+                    if (data.response === "s") {
+                        html += '<label class="bold">Remarks:</label><br><ol>';
+                        $.each(data.details, function(i, val) {
+                            html +=
+                                '<li class="add-remarks" style="cursor:pointer; margin-right:5px;border:1px solid #daf8ff;padding:2px;" title="Click to remarks">' +
+                                val["remarks"] + '</li>';
+                        });
+                        html += '</ol>';
+                    } else if (data.response === "e") {
+
+                    }
+                },
+                complete: function() {
+                    $("#chk_suggestions").fadeIn().html(html);
+                }
+            });*/
+            $("#chk_suggestions").fadeIn().html(html);
+        });
+
+        $("#itinerary_type").on("change", function() {
+            var d = $(this).val();
+            $("#chk_suggestions").html("").fadeOut();
+            $.ajax({
+                url: "<?php echo site_url('get-itinerary-suggesstions'); ?>",
+                type: "post",
+                data: {
+                    "type": d,
+                    "location": "<?php echo $details->enquiry_abbr; ?>"
+                },
+                dataType: 'JSON',
+                //contentType : false,
+                //processData: false,
+                success: function(data) {
+                    $("#msg").html("").html(data.msg);
+                    $("#itinerary_values").empty().append(
+                        '<option value=""></option>');
+                    if (data.response === "s") {
+                        const v = ["sitescene", "night-life", "activity",
+                            "transfers", "miscellaneous"
+                        ];
+                        if (v.indexOf($("#itinerary_type").val()) !== -1) {
+                            $.each(data.details, function(i, val) {
+                                $("#itinerary_values").append(
+                                    '<option data-type="sites" data-id="' + val.id + '" value="' + val.site_name + '|' + val
+                                    .departing_time_from_hotel +
+                                    '|' + val.entry_ticket + '|' +val.days_of_operation + '">' +
+                                    val.site_name + '</option>');
+                            });
+                        } else if ($("#itinerary_type").val() ===
+                            "restaurants") {
+                            $.each(data.details, function(i, val) {
+                                $("#itinerary_values").append(
+                                    '<option data-type="restaurants" data-id="' +
+                                    val.id + '" value="' + val
+                                    .name + '|' + val.cuisine +
+                                    '|' + val.description + '">' +
+                                    val.name + '</option>');
+                            });
+                        }
+                    } else if (data.response === "e") {
+
+                    }
+                }
+            });
+        });
+
+        $("#frm1").on('click', '.suggesstions', function() {
+            CKEDITOR.instances["description"].insertHtml($(this).html());
+        });
+
+        $("#frm1").on('click', '.add-remarks', function() {
+            CKEDITOR.instances["itinerary_remarks"].insertHtml($(this).html());
+        });
+
+        function stripHtmlTags(input) {
+            var div = document.createElement('div');
+            div.innerHTML = input;
+            return div.textContent || div.innerText || "";
+        }
+
+        // Remove special characters and extra spaces
+        function cleanText(input) {
+            var decodedText = decodeURIComponent(input);
+
+            // Strip HTML tags, but keep special characters
+            var plainText = decodedText.replace(/<\/?[^>]+(>|$)/g, "").trim();
+
+            return plainText;
+        }
+
+        $("#btn-add").on("click", function() {
+            //var txt = CKEDITOR.instances["description"].getData();
+            var title = CKEDITOR.instances["title"].getData();
+            var remarks = CKEDITOR.instances["itinerary_remarks"].getData();
+            var sites_id = $("#itinerary_values").find(':selected').attr("data-id");
+            if(!sites_id){
+                $("#msg-show").html('<div class="alert alert-danger">Itinerary Title Not Selected!</div>');                                
+                return false;
+            }
+            if ($("#frm_date").val() === "" || $("#frm_time").val() ===
+                "" /*|| txt === ""*/ ) {
+                $("#msg-show").html(
+                    '<div class="alert alert-danger">Date, Time Are Mandatory!</div>');
+                //$("html, body").animate({ scrollTop: 0 }, 3000);
+                return false;
+            } 
+            const frm_date = new Date($("#frm_date").val());
+            const day_Name = new Date(frm_date).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+            var operational_days = ($("#hdn-operational-days").val()!="")?$("#hdn-operational-days").val().split(","):['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+            if($.inArray(day_Name, operational_days) === -1){
+                alert("Not operational on "+day_Name);
+                return false;
+            }
+            
+            const formattedDate = frm_date.toLocaleString("en-GB", {
+                day: "numeric",
+                month: "short",
+                year: "numeric"
+            });
+            var num_class = $('li.itinerary_li').length;
+
+            //txt = txt.replace(/(<p>|<\/p>)/g, "");
+            title = title.replace(/(<p>|<\/p>)/g, "");
+            remarks = remarks.replace(/(<p>|<\/p>)/g, "");
+            if (num_class === 0) {
+                html =
+                    '<li class="itinerary_li"><span class="label label-primary itinerary_date" style="padding:5px;">' +
+                    formattedDate + '</span><br>';
+                html += '<input type="hidden" value="' + $("#frm_date").val() +
+                    '" name="itinerary_date[]"></li>';
+                $(".timeline").append(html);
+            } else if ($("input[name='itinerary_date[]']").eq(num_class - 1).val() !== $(
+                    "#frm_date").val()) {
+                html =
+                    '<li class="itinerary_li"><span class="label label-primary itinerary_date" style="padding:5px;">' +
+                    formattedDate + '</span><br>';
+                html += '<input type="hidden" value="' + $("#frm_date").val() +
+                    '" name="itinerary_date[]"></li>';
+                $(".timeline").append(html);
+            }
+            var idx = $('#frm-timeline li.itinerary_li').last().index() - 1;
+            html_li = '<div style="margin:7px 0 0;">';
+            html_li +=
+                '<i title="Remove" class="fa fa-window-close edit-remove" style="color:red;cursor: pointer;float: right;margin-top: 5px;position:relative;"></i>';
+            html_li += '<label class="lbl-bold">' + $("#frm_time").val() +
+                'Hrs</label> <span style="display:inline-flex; width:59%; flex-flow: wrap ;border-right:1px solid #f3f0ed;padding:3px;">' +
+                title + '</span>';
+            html_li +=
+                '<span style="display:inline-flex; width:25%padding:6px;">' +
+                remarks + '</span>';
+            html_li += '<input type="hidden" name="itinerary_title_' + idx + '[]" value="' +
+                encodeURI(title) + '" >';
+            html_li += '<input type="hidden" name="itinerary_title_search_' + idx + '[]" value="' +
+                cleanText(title) + '" >';
+            html_li += '<input type="hidden" name="itinerary_sites_id_' + idx + '[]" value="' +
+                sites_id + '" >';
+            html_li += '<input type="hidden" name="itinerary_text_' + idx + '[]" value="' +
+                encodeURI(txt) + '" >';
+            html_li += '<input type="hidden" name="itinerary_remarks_' + idx +
+                '[]" value="' + encodeURI(remarks) + '">';
+            html_li += '<input type="hidden" name="itinerary_time_' + idx + '[]" value="' +
+                $("#frm_time").val() + '"></div>';
+
+            $('#frm-timeline li.itinerary_li').eq(idx).append(html_li);
+            CKEDITOR.instances["description"].setData('');
+            CKEDITOR.instances["title"].setData('');
+            $("#itinerary_remarks").val('');
+            //$("html, body").animate({ scrollTop: 0 }, 3000);
+            $("#frm_time").val('');
+            $("#msg-show").html(
+                '<div class="alert alert-success">Added Successfully</div>');
+        });
+
+        $("#frm-timeline").on("click", '.edit-remove', function(e) {
+            if (!confirm('Are You Sure?')) {
+                return false;
+            }
+            e.preventDefault();
+            $(this).parent().remove();
+        });
+
+        $("#btn-submit").on("click", function() {
+            event.preventDefault();
+            let myForm = document.getElementById("frm-timeline");
+            var data = new FormData(myForm);
+            data.set('inclusions',CKEDITOR.instances["inclusions"].getData());
+            data.set('exclusions',CKEDITOR.instances["exclusions"].getData());
+            data.set('important_notes',CKEDITOR.instances["important_notes"].getData());
+            data.set('cancellation_policy',CKEDITOR.instances["cancellation_policy"].getData());
+            data.set('origin_city',$("#origin_city").val());
+            data.set('arrival_city',$("#arrival_city").val());
+            data.set('arrival_airline',$("#arrival_airline").val());
+            data.set('arrival_time',$("#arrival_time").val());
+            data.set('departure_city',$("#departure_city").val());
+            data.set('departing_airline',$("#departing_airline").val());
+            data.set('departing_time',$("#departing_time").val());
+            data.set('airport_pick_drop',$("#airport_pick_drop").val());
+            data.set('mandatory_services',$("#mandatory_services").val());
+            
+            if($("#hotel_total").length > 0){
+                data.set('hotel_total',$("#hotel_total").val());
+            }else{ data.set('hotel_total','0'); }
+
+            if($("#hotel_total_1").length > 0){
+                data.set('hotel_total_1',$("#hotel_total_1").val());
+            }else{ data.set('hotel_total_1','0'); }
+
+            if($("#hotel_total_2").length > 0){
+                data.set('hotel_total_2',$("#hotel_total_2").val());
+            }else{ data.set('hotel_total_2','0'); }
+
+            if($("#hotel_names_1").length > 0){
+                data.set('hotel_names_1',$("#hotel_names_1").val());
+            }else{ data.set('hotel_names_1',''); }
+
+            if($("#hotel_names_2").length > 0){
+                data.set('hotel_names_2',$("#hotel_names_2").val());
+            }else{ data.set('hotel_names_2',''); }							
+            
+            /*if($("#hdn_restaurants_grand_total").length > 0){
+                    data.set('hdn_restaurants_grand_total',$("#hdn_restaurants_grand_total").val());
+            }else{ data.set('hdn_restaurants_grand_total',''); }*/
+            
+            if($("#hdn_guide_grand_total").length > 0){
+                data.set('hdn_guide_grand_total',$("#hdn_guide_grand_total").val());
+            }else{ data.set('hdn_guide_grand_total',''); }                            
+            
+            if($("#hotel_nights").length > 0){
+                data.set('hotel_nights',$("#hotel_nights").val());
+            }else{ data.set('hotel_nights',''); }                            
+            
+            if($("#hdn_mandatory_grand_total").length > 0){
+                data.set('hdn_mandatory_grand_total',$("#hdn_mandatory_grand_total").val());
+            }else{ data.set('hdn_mandatory_grand_total',''); }
+            
+            if($("#hdn_luggage_price").length > 0){
+                data.set('hdn_luggage_price',$("#hdn_luggage_price").val());
+            }else{ data.set('hdn_luggage_price',''); }
+            
+            if($("#hotel_costing_category_wise").length > 0){
+                data.set('hotel_costing_category_wise',$("#hotel_costing_category_wise").val());
+            }else{ data.set('hotel_costing_category_wise',''); }
+            
+            if($("#hotel_names_category_wise").length > 0){
+                data.set('hotel_names_category_wise',$("#hotel_names_category_wise").val());
+            }else{ data.set('hotel_names_category_wise',''); }
+
+            if($("#hotel_room_category_names_wise").length > 0){
+                data.set('hotel_room_category_names_wise',$("#hotel_room_category_names_wise").val());
+            }else{ data.set('hotel_room_category_names_wise',''); }
+            
+            $("#btn-submit").html("Sending..").attr("disabled", "disabled");
+            $.ajax({
+                url: "<?php echo site_url('admin/quotation/save_and_email_new'); ?>",
+                type: "post",
+                data: data,
+                dataType: 'JSON',
+                contentType: false,
+                processData: false,
+                success: function(data) {
+                    $("#msg_div").html("").html(data.msg);
+                    if (data.response === "s") {
+                        //window.location.href = "<?php //echo base_url('all-itinerary'); ?>";										
+                    } else if (data.response === "e") {
+                        
+                    }
+            $("#btn-submit").html("Save and Email").removeAttr("disabled");
+                }
+            });
+        });
+        
+        $("#btn-submit-save").on("click", function() {
+            event.preventDefault();
+            let myForm = document.getElementById("frm-quotation");
+            var data = new FormData(myForm);
+            $("#btn-submit-save").html("Saving..").attr("disabled", "disabled");
+            $.ajax({
+                url: "<?php echo site_url('admin/quotation/save_quotation'); ?>",
+                type: "post",
+                data: data,
+                dataType: 'JSON',
+                contentType: false,
+                processData: false,
+                success: function(data) {
+                    $("#msg_div").html("").html(data.msg);
+                    if (data.response === "s") {
+                        $("#btn-submit-save").html("<i class='fa fa-check'></i> Saved");
+                    } else if (data.response === "e") {
+                        $("#btn-submit-save").html("Save").removeAttr("disabled");
+                    }
+
+                }
+            });
+        });
+        
+        $("#itinerary_template").on("change", function() {
+            var id = $(this).val();
+            window.location.href =
+                "<?php echo base_url('create-itinerary?id=' . $this->input->get('id') . '&temp_id='); ?>" +
+                btoa(id);
+        });
+
+        //$(".edit").on("click",function(){
+        $("#frm-timeline").on("click", '.edit', function(e) {
+            $("#btn-edit").show();
+            $("#btn-add").hide();
+            $("#btn-add-update").hide();
+            var id = $(this).attr("id");
+            var idx = $(this).index('.edit');
+            $("#frm_time").val($(".lbl-edit").eq(idx).html()).parent("div").addClass(
+                "is-focused");
+            CKEDITOR.instances["title"].setData($(".txt-edit").eq(idx).html());
+            $("#itinerary_remarks").val($(".rm-edit").eq(idx).html()).parent("div")
+                .addClass("is-focused");
+            $("#btn-add").hide();
+            $("#btn-edit").show().attr("u_id", btoa(id)).attr("val-idx", idx);
+            $('.rdo').prop('checked', false);
+            $("#msg, #msg-show").html('');
+        });
+
+        $("#btn-edit").on("click", function() {
+            const frm_date = new Date($("#frm_date").val());
+            const day_Name = new Date(frm_date).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+            var operational_days = ($("#hdn-operational-days").val()!="")?$("#hdn-operational-days").val().split(","):['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+            if($.inArray(day_Name, operational_days) === -1){
+                alert("Not operational on "+day_Name);
+                return false;
+            }
+            var idx = $(this).attr("val-idx");
+            var txt = CKEDITOR.instances["description"].getData();
+            var title = CKEDITOR.instances["title"].getData();
+            txt = txt.replace(/(<p>|<\/p>)/g, "");
+            title = txt.replace(/(<p>|<\/p>)/g, "");
+            $(".lbl-edit").eq(idx).html($("#frm_time").val());
+            $(".txt-edit").eq(idx).html(txt);
+            $(".rm-edit").eq(idx).html($("#itinerary_remarks").val());
+            $("input[name='itinerary_title_" + idx + "[]']").val(encodeURI(title));
+            $("input[name='itinerary_title_search_" + idx + "[]']").val(cleanText(title));
+            $("input[name='itinerary_text_" + idx + "[]']").val(encodeURI(txt));
+            $("input[name='itinerary_remarks_" + idx + "[]']").val($("#itinerary_remarks")
+                .val());
+            $("input[name='itinerary_time_" + idx + "[]']").val($("#frm_time").val());
+            CKEDITOR.instances["description"].setData('');
+            $("#itinerary_remarks").val('');
+            //$("html, body").animate({ scrollTop: 0 }, 3000);
+            $("#frm_time").val('');
+            $("#msg-show").html(
+                '<div class="alert alert-success">Added Successfully</div>');
+        });
+
+        $(".rdo").on("click", function() {
+            $("#btn-edit").hide();
+            $("#btn-add").hide();
+            $("#btn-add-update").hide();
+            $("#msg, #msg-show").html('');
+            if (parseInt($(".rdo").length) === (parseInt($(this).index(".rdo")) + 1)) {
+                $("#btn-add").show();
+            } else {
+                $("#frm_date").val($("input[name='itinerary_date[]']").eq($(this).index(
+                    ".rdo")).val()).parent().addClass("is-focused");
+                $("#btn-add-update").show();
+                $(".dt-date").trigger("change");
+            }
+        });
+        
+            var transport_prices='';
+        $("#btn-add-update").on("click", function() {
+            var idx = $("input:radio.rdo:checked").index(".rdo"); 
+            var title = CKEDITOR.instances["title"].getData();
+            var sites_id = $("#itinerary_values").find(':selected').attr("data-id");
+            if(!sites_id){
+                $("#msg-show").html('<div class="alert alert-danger">Itinerary Title Not Selected!</div>');                                
+                return false;
+            }
+            if ($("#frm_time").val() === "" /*|| txt === ""*/ ) {
+                $("#msg-show").html(
+                    '<div class="alert alert-danger">Date, Time Are Mandatory!</div>');
+                return false;
+            }
+            const day_Name = new Date($("#frm_date").val()).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+            var operational_days = ($("#hdn-operational-days").val()!="")?$("#hdn-operational-days").val().split(","):['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+            if($.inArray(day_Name, operational_days) === -1){
+                alert("Not operational on "+day_Name);
+                return false;
+            }
+                var transport_prices = '';
+                $.ajax({
+                url: "<?php echo site_url('admin/quotation/transport_prices'); ?>",
+                type: "post",
+                    data: {"site_id":sites_id,"transports_id":"<?php echo ($this->input->get('chk_vehicle')<>'')?implode(',',$this->input->get('chk_vehicle')):''; ?>",
+                        "checkin_date":"<?=$details->check_in_date ?>","checkout_date":"<?=$details->check_out_date ?>"},
+                                    dataType: 'JSON',
+                    async: false,
+                success: function(data) {									
+                $("#msg-show").html("").html(data.msg);
+                var q = "<?=implode(",",($this->input->get('vehicle_quantity[]')<>'')?$this->input->get('vehicle_quantity[]'):[]); ?>";
+                var qnty = q.split(",");
+                var v = "<?=implode(",",($this->input->get('chk_vehicle[]')<>'')?$this->input->get('chk_vehicle[]'):[]); ?>";
+                var vehicles = v.split(",");
+                if (data.response === "s") {
+                var flag_outside = flag_inside = true;
+                var ele_name_outside = 'hdn_transportation_outside_'+idx;
+                var ele_name_inside = 'hdn_transportation_inside_'+idx;
+
+                $("#frm-timeline .total").each(function(index, element) {
+                    if($(this).attr("name") == ele_name_outside) { 
+                        flag_outside = false; 
+                        return false;
+                    }
+                });
+
+                $("#frm-timeline .total").each(function(index, element) {
+                    if($(this).attr("name") == ele_name_inside){ 
+                        flag_inside = false; 
+                        return false;
+                    }											
+                });										
+
+                if(data.details.transportation.length > 0 && flag_outside){
+                    transport_prices = '<div class="alert alert-info" style="padding:4px;text-transform:capitalize;font-size:12px;text-align:center;">';
+                    transport_prices += '<div class="row" style="line-height: 10px;margin-top: 2px;font-weight:600;margin-bottom:6px;">';
+                    transport_prices += '<div class="col-md-5">Vehicle Name</div><div class="col-md-1">Price</div><div class="col-md-1">Toll</div>';
+                    transport_prices += '<div class="col-md-2">Parking</div><div class="col-md-1">Qty.</div><div class="col-md-2">Total</div></div>';
+                    var transportation_total = 0;
+                    $.each(data.details.transportation, function(i, d) {
+                            if(vehicles.indexOf(d.id) != -1){
+                                    var total = (parseInt(d.price) + parseInt(d.toll_price) + parseInt(d.parking_price))*parseInt(qnty[vehicles.indexOf(d.id)]);
+                                    transport_prices += '<div class="row" style="line-height: 15px;margin-top: 2px;">';
+                                    transport_prices += '<div class="col-md-5">'+d.vehicle_name+'</div><div class="col-md-1">'+d.price+'</div><div class="col-md-1">'+d.toll_price+'</div>';
+                                    transport_prices += '<div class="col-md-2">'+d.parking_price+'</div><div class="col-md-1">'+qnty[vehicles.indexOf(d.id)]+'</div><div class="col-md-2">'+total+'</div></div>';
+                                    transportation_total = parseInt(transportation_total) + parseInt(total);
+                            }
+                    });
+                    transport_prices += '<input type="hidden" class="total" name="hdn_transportation_outside_'+idx+'" value="'+transportation_total+'"></div>';
+                    //console.log(transport_prices);
+                }
+                if(data.details.transportation_cost.length > 0 && flag_inside){
+                    transport_prices += '<div class="alert alert-info" style="padding:4px;text-transform:capitalize;font-size:12px;text-align:center;">';
+                    transport_prices += '<div class="row" style="line-height: 10px;margin-top: 2px;font-weight:600;margin-bottom:6px;">';
+                    transport_prices += '<div class="col-md-5">Vehicle Name</div><div class="col-md-2">Full Day Price</div>';
+                    transport_prices += '<div class="col-md-1">Qty.</div><div class="col-md-2">Total</div></div>';
+                    var transportation_total = 0;
+                    $.each(data.details.transportation_cost, function(i, d) {
+                            if(vehicles.indexOf(d.id) != -1){
+                                    var total = (parseInt(d.price))*parseInt(qnty[vehicles.indexOf(d.id)]);
+                                    transport_prices += '<div class="row" style="line-height: 15px;margin-top: 2px;">';
+                                    transport_prices += '<div class="col-md-5">'+d.vehicle_name+'</div><div class="col-md-2">'+d.price+'</div>';
+                                    transport_prices += '<div class="col-md-1">'+qnty[vehicles.indexOf(d.id)]+'</div><div class="col-md-2">'+total+'</div></div>';
+                                    transportation_total = parseInt(transportation_total) + parseInt(total);
+                            }
+                    });
+                    transport_prices += '<input type="hidden" class="total" name="hdn_transportation_inside_'+idx+'" value="'+transportation_total+'"></div>';
+                }
+                    } else if (data.response === "e") {
+                        
+                    }
+                }
+            });
+            //console.log(transport_prices);
+            title = title.replace(/(<p>|<\/p>)/g, "");
+            
+            html_li = '<div style="margin:7px 0 0;">';
+            html_li +=
+                '<i title="Remove" class="fa fa-close edit-remove" style="color:red;cursor: pointer;float: right;margin-top: 5px;position:relative;"></i>';
+            html_li += '<label class="lbl-bold lbl-time">' + $("#frm_time").val() +
+                '</label><strong>Hrs</strong> <span style="width:60%">' + title +  '</span>';
+            html_li += transport_prices;
+            html_li += '<input type="hidden" name="itinerary_title_' + idx + '[]" value="' +
+                encodeURI(title) + '" >';
+            html_li += '<input type="hidden" name="itinerary_title_search_' + idx + '[]" value="' +
+                cleanText(title) + '" >';
+            html_li += '<input type="hidden" name="itinerary_sites_id_' + idx + '[]" value="' +
+                sites_id + '" >';
+            html_li += '<input type="hidden" name="itinerary_time_' + idx + '[]" value="' +
+                $("#frm_time").val() + '">';
+            html_li += '</div>';
+            var flag = false;
+            
+            /*$("#frm-timeline .lbl-time").each(function(index, element) {
+                if ($(this).parent().parent().index('.itinerary_li') === idx) {
+                    var start = $(this).html().split(":");
+                    var end = $("#frm_time").val().split(":");
+
+                    var lbl_time = new Date(0, 0, 0, start[0], start[1], 0);
+                    var new_time = new Date(0, 0, 0, end[0], end[1], 0);
+                    //console.log(lbl_time.getTime()+"_____"+new_time.getTime());
+                    //if(Date.now($(this).html()) > Date.now($("#frm_time").val())){ 
+                    if (lbl_time > new_time) {
+                        var p_idx = $(this).parent().index("p");
+                        $('#frm-timeline p').eq(p_idx).before(html_li);
+                        flag = true;
+                        return false;
+                    }
+                }
+            });*/
+            if (flag === false) {
+                $('#frm-timeline li.itinerary_li').eq(idx).append(html_li);
+            }
+            //CKEDITOR.instances["description"].setData('');
+            CKEDITOR.instances["title"].setData('');
+            //$("#itinerary_remarks").val('');
+            //$("html, body").animate({ scrollTop: 0 }, 3000);
+            $("#frm_time").val('');
+            $("#msg-show").html(
+                '<div class="alert alert-success">Added Successfully</div>');
+        });
+
+        $("#frm-timeline").on("change", ".dt-dateformat", function() {
+            var idx = $(this).index(".dt-dateformat");
+            const selectedDate = new Date($(".dt-dateformat").eq(idx).val());
+            //const lastDayDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
+            const options = {
+                year: 'numeric',
+                month: 'short',
+                day: '2-digit'
+            };
+            const formattedDate = selectedDate.toLocaleDateString('en-IN', options);
+
+            if ($(".dt-dateformat").eq(idx).val() != "" && formattedDate !=
+                "Invalid Date") {
+                $(".dt-dateformat-show").eq(idx).val(formattedDate).parent().addClass(
+                    'is-focused');
+            } else {
+                $(".dt-dateformat-show").eq(idx).val('');
+            }
+        });
+        $("#frm1").on("change", ".dt-date", function() {
+            var idx = $(this).index(".dt-date");
+            const selectedDate = new Date($(".dt-date").eq(idx).val());
+            //const lastDayDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
+            const options = {
+                year: 'numeric',
+                month: 'short',
+                day: '2-digit'
+            };
+            const formattedDate = selectedDate.toLocaleDateString('en-IN', options);
+
+            if ($(".dt-date").eq(idx).val() != "" && formattedDate != "Invalid Date") {
+                $(".dt-date-show").eq(idx).val(formattedDate).parent().addClass(
+                    'is-focused');
+            } else {
+                $(".dt-date-show").eq(idx).val('');
+            }
+        });
+
+    });
+</script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const dateInputs = document.querySelectorAll('.dt-dateformat');
+        
+        dateInputs.forEach((input, index) => {
+            const dateValue = input.value;
+            if (dateValue) {
+                const dayName = new Date(dateValue).toLocaleDateString('en-US', { weekday: 'long' });
+                const dayDisplay = document.getElementById(`day-display-${index}`);
+                if (dayDisplay) dayDisplay.textContent = dayName;
+            }
+        });
+    });
+</script>

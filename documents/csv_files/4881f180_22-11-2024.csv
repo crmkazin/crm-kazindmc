@@ -1,0 +1,12 @@
+Category ID,Room Category Name,Max Occupancy,Adults Allowed,Childs Allowed,Child With Bed (CWB/CNB/NA),Single Occupancy Price,Double Occupancy Price,Triple Occupancy Price,Four Occupancy Price,CWB
+1,Guest Room (King Bed),,2,1,,35000,42000,,,5000
+2,Guest Room (Twin Bed),,2,0,,30000,37000,,,
+3,Deluxe Room (King Bed),3,2,1,,32000,40000,,,6000
+4,Deluxe Room (Twin Bed),4,2,2,,40000,48000,,,9000
+5,Suite Room (King Bed),,2,1,,30000,35000,,,5000
+204,Standard Room (twin Bed),,2,0,,,,,,
+205,Standard Room (king Bed),,2,1,,,,,,
+277,KING ONE BEDROOM SUITE,,2,1,,,,,,
+345,Family Room,,4,1,,,,,,
+384,Triple Room,,3,0,,,,,,
+597,Lux Room,,3,0,,,,,,

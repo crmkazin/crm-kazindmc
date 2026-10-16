@@ -1,0 +1,170 @@
+[12-Jul-2026 03:11:53 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/login.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/login.php on line 12
+[12-Jul-2026 03:12:11 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/login.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/login.php on line 12
+[12-Jul-2026 03:12:30 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/login.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/login.php on line 12
+[12-Jul-2026 03:26:07 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/login.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/login.php on line 12
+[12-Jul-2026 03:26:13 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/change_password.php:15
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/change_password.php on line 15
+[12-Jul-2026 03:27:52 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/user_list.php(1): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[12-Jul-2026 03:27:53 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/user.php(1): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[12-Jul-2026 03:28:02 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/user_list.php(1): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[12-Jul-2026 03:28:03 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/user.php(1): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[12-Jul-2026 03:28:04 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/edit_user.php(1): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[12-Jul-2026 04:25:39 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/change_password.php:15
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/change_password.php on line 15
+[12-Jul-2026 04:38:00 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/print_quotation.php(8): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[12-Jul-2026 04:38:01 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/print_quotation.php(8): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[12-Jul-2026 04:38:01 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/print_quotation2.php(8): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[12-Jul-2026 04:38:02 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/print_quotation2.php(8): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[12-Jul-2026 04:38:43 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/change_password.php:15
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/change_password.php on line 15
+[12-Jul-2026 05:04:15 UTC] PHP Fatal error:  Uncaught Error: Using $this when not in object context in /home/crmkazindmc/public_html/application/views/admin/dashboard.php:2
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/dashboard.php on line 2
+[12-Jul-2026 05:04:16 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/login.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/login.php on line 12
+[12-Jul-2026 05:04:17 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/change_password.php:15
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/change_password.php on line 15
+[12-Jul-2026 05:05:15 UTC] PHP Fatal error:  Uncaught Error: Using $this when not in object context in /home/crmkazindmc/public_html/application/views/admin/dashboard.php:2
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/dashboard.php on line 2
+[12-Jul-2026 05:05:16 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/login.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/login.php on line 12
+[12-Jul-2026 05:05:17 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/change_password.php:15
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/change_password.php on line 15
+[13-Jul-2026 09:31:16 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/dashboard-18april.php(17): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[13-Jul-2026 09:31:17 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/dashboard-20april.php(8): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[13-Jul-2026 09:31:18 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/edit_user-21april.php(8): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[13-Jul-2026 09:31:19 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/all_client-old.php(8): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[13-Jul-2026 09:31:19 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/enquiry-21april.php(8): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[13-Jul-2026 09:47:27 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/agents_report24april.php(9): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[13-Jul-2026 09:47:35 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/agents_report.php:26
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/agents_report.php on line 26
+[13-Jul-2026 09:47:36 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/agents_report24april.php(9): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[13-Jul-2026 09:48:25 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/merge_agents.php(1): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[13-Jul-2026 09:48:30 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/agent_report_pdf.php:32
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/agent_report_pdf.php on line 32
+[13-Jul-2026 09:49:05 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/agent_active_status_view.php:46
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/agent_active_status_view.php on line 46
+[13-Jul-2026 09:49:06 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/agent_productivity_report.php:16
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/agent_productivity_report.php on line 16
+[13-Jul-2026 09:49:07 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 /home/crmkazindmc/public_html/application/views/admin/agentwise_report.php(8): include()
+#1 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[13-Jul-2026 09:49:36 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/agents_report.php:26
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/agents_report.php on line 26
+[13-Jul-2026 09:49:37 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php:5
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/admin_head_css.php on line 5
+[13-Jul-2026 09:52:23 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function base_url() in /home/crmkazindmc/public_html/application/views/admin/agents_report.php:26
+Stack trace:
+#0 {main}
+  thrown in /home/crmkazindmc/public_html/application/views/admin/agents_report.php on line 26

@@ -1,0 +1,497 @@
+<style>
+.img-width {max-width: 80px;}
+.greenText{ background-color:#02d530; }
+.blueText{ background-color:#0f4aff; }
+.orangeText{ background-color:orange; }
+.grayText{ background-color:#bdbdbd; }
+.whiteText{ background-color:#FFF; }
+.dataTable thead th[class*=sorting]:after{display: none !important;}
+</style>
+<link href="https://cdn.jsdelivr.net/gh/djibe/material@4.6.2-1.0/css/material-plugins.min.css" rel="stylesheet" />
+<?php include('admin_head_css.php'); ?>
+
+<div class="page-wrapper">
+    <div class="container-fluid">
+        <div class="row page-titles">
+            <div class="col-lg-2 col-sm-6  col-6 align-self-center">
+                <h4 class="text-themecolor">Clients</h4>
+            </div>
+            <div class="col-lg-8 only-for-dashbord">
+            </div>
+            <div class="col-lg-2 col-sm-6 col-6 align-self-center text-end">
+                <div class="d-flex justify-content-end align-items-center">
+                    <ol class="breadcrumb justify-content-end">
+                        <li class="breadcrumb-item"><a href="<?php echo base_url('dashboard'); ?>">Home</a></li>
+                        <li class="breadcrumb-item active">Clients</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+        <?php echo $this->session->flashdata('message'); unset($_SESSION['message']); ?> <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                <h4 class="card-title">Clients</h4>
+                <form method="get" autocomplete="off">
+                    <div class="card-body row">
+                        <div class="col-lg-3 p-t-20">
+                            <div
+                                class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+
+                                <?php echo form_input(['name' => 'country', 'id' => 'country', 'placeholder' => 'Country', 'class' => 'mdl-textfield__input','value'=>$this->input->get('country')]) ?>
+                                <label class="mdl-textfield__label">Select Country</label>
+                            </div>
+                        </div>
+                        <input type="hidden" name="country_id" id="country_id" value="">
+                        <div class="col-lg-3 p-t-20">
+                            <div
+                                class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+
+                                <?php echo form_input(['name' => 'state', 'id' => 'state', 'placeholder' => 'State', 'class' => 'mdl-textfield__input','value'=>$this->input->get('state')]) ?>
+                                <label class="mdl-textfield__label">State</label>
+                            </div>
+                        </div>
+                        <input type="hidden" name="state_id" id="state_id" value="">
+
+                        <div class="col-lg-3 p-t-20">
+                            <div
+                                class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+
+                                <?php echo form_input(['name' => 'city', 'id' => 'city', 'placeholder' => 'City', 'class' => 'mdl-textfield__input','value'=>$this->input->get('city')]) ?>
+                                <label class="mdl-textfield__label">City</label>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-3 p-t-20">
+                            <div
+                                class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                                <?php echo form_input(['name' => 'company', 'id' => 'company', 'placeholder' => 'Company Name', 'class' => 'mdl-textfield__input', 'value'=>($this->input->get('company')<>'')?urldecode($this->input->get('company')):'']) ?>
+                                <label class="mdl-textfield__label">Company</label>
+                            </div>
+                            <input type="hidden" name="company_id" id="company_id" value="<?=($this->input->get('company_id')<>'' && $this->input->get('company')<>'')?$this->input->get('company_id'):''; ?>">
+                        </div>
+
+                        <div class="col-lg-3 p-t-20">
+                            <div
+                                class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                                <select name="agent" id="agent" class="mdl-textfield__input" style="padding:8px;">
+                                    <option value="">Select..</option>
+                                </select>
+                                <label class="mdl-textfield__label">Select Agent</label>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-3 p-t-20">
+                            <div
+                                class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                                <?php echo form_input(['name' => 'email', 'type' => 'email', 'id' => 'email', 'placeholder' => 'Agent email', 'class' => 'mdl-textfield__input','value'=>urldecode($this->input->get('email'))]) ?>
+                                <label class="mdl-textfield__label">Email Address</label>
+                            </div>
+                        </div>
+                        
+                        <div class="col-lg-3 p-t-20">
+                            <div
+                                class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                                <?php echo form_input(['name' => 'mobile', 'type' => 'text', 'id' => 'mobile', 'placeholder' => 'Agent mobile number', 'class' => 'mdl-textfield__input','value'=>urldecode($this->input->get('mobile'))]) ?>
+                                <label class="mdl-textfield__label">Mobile Number</label>
+                            </div>
+                        </div>
+                        <div class="col-lg-3 p-t-20">
+                            <div
+                                class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                                <select onchange="this.className=this.options[this.selectedIndex].className" name="enquiry_status" id="enquiry_status" class="mdl-textfield__input" style="padding:5px;width:100%;">
+                                    <option class="whiteText" value="">All</option>
+                                    <option class="grayText" value="no-query" <?php echo ($this->input->get('enquiry_status')<>'' && $this->input->get('enquiry_status')=='no-query')?'selected':''; ?>></option>
+                                    <option class="blueText" value="query-received-but-not-converted" <?php echo ($this->input->get('enquiry_status')<>'' && $this->input->get('enquiry_status')=='query-received-but-not-converted')?'selected':''; ?>></option>
+                                    <option class="orangeText" value="only-one-query-converted" <?php echo ($this->input->get('enquiry_status')<>'' && $this->input->get('enquiry_status')=='only-one-query-converted')?'selected':''; ?>></option>
+                                    <option class="greenText" value="queries-converted" <?php echo ($this->input->get('enquiry_status')<>'' && $this->input->get('enquiry_status')=='queries-converted')?'selected':''; ?>></option>
+                                </select>
+                                <label class="mdl-textfield__label">Status</label>
+                            </div>
+                            
+                        </div>
+                        <div class="col-lg-3 p-t-20">
+                            <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                                <select name="year[]" id="year" class="mdl-textfield__input js-example-basic-multiple" style="padding:5px;width:100%;" multiple>
+                                    <option value="">Select..</option>
+                                    <?php 
+                                    $current_year = date('Y');
+                                    $get_years = ($this->input->get('year')<>'')?$this->input->get('year'):[]; 
+                                    
+                                    for($i=2023;$i<=$current_year;$i++){ ?>
+                                    <option value="<?=$i?>" <?php echo (!empty($this->input->get('year')) && in_array($i, $get_years))?'selected="selected"':''; ?>><?=$i?></option>
+                                    <?php } ?>
+                                </select>
+                                <label class="mdl-textfield__label">Year</label>
+                            </div>
+                            
+                        </div>
+                        <div class="col-lg-3 p-t-20">
+                            <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                                <select name="months[]" id="months" class="mdl-textfield__input js-example-basic-multiple" style="padding:5px;width:100%;" multiple <?php echo (count($get_years)>1)?'disabled':''; ?>>
+                                    <option value="all" <?php echo ($this->input->get('months')<>'' && $this->input->get('months')[0]=='all')?'selected="selected"':''; ?>>All</option>
+                                        <?php   $months = ['01'=>'January','02'=>'February','03'=>'March','04'=>'April','05'=>'May','06'=>'June',
+                                                        '07'=>'July','08'=>'August','09'=>'September','10'=>'October','11'=>'November','12'=>'December']; 
+                                            $get_months = ($this->input->get('months')<>'')?$this->input->get('months'):[];
+                                            $first_month = $get_months[0];
+                                            $last_month = end($get_months);
+                                            for($m=$first_month;$m<=$last_month;$m++){
+                                                $get_months[] = $m;
+                                            }
+                                            
+                                        ?>
+                                        <?php foreach($months AS $key=>$val){ ?>
+                                            <option value="<?=$key?>" <?php echo ($get_months<>'' && in_array($key,$get_months))?'selected="selected"':''; ?>><?=$val?></option>
+                                        <?php } ?>
+                                </select>
+                                <label class="mdl-textfield__label">Month(s)</label>
+                            </div>												
+                        </div>
+                        
+                        
+                        <div class="col-lg-2 p-t-20">
+                            <?php echo form_submit(['name' => 'submit', 'id' => 'submit', 'class' => 'btn btn-md btn-primary m-t-20', 'style' => 'float:left;', 'value' => 'Search']); ?>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <!-- table responsive -->
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive m-t-20">
+                    <div style="display: flex;justify-content: space-between;margin-bottom: 20px;">
+                        <span class="label" style="background: #bdbdbd;padding:2px 7px;">&nbsp;</span><strong>&nbsp;No query received</strong>
+                        <span class="label" style="background: #0f4aff;;padding:2px 7px;">&nbsp;</span><strong>&nbsp;Query received but not converted</strong>
+                        <span class="label" style="background: orange;padding:2px 7px;">&nbsp;</span><strong>&nbsp;Single query converted</strong>
+                        <span class="label" style="background: #02d530;padding:2px 7px;">&nbsp;</span><strong>&nbsp;Multiple query  converted</strong>
+                    </div>
+                    <div class="table-scrollable">
+                        <table
+                            class="table table-hover table-checkable order-column full-width"
+                            id="client_data">
+                            <!-- Table header -->
+                            <thead>
+                                <tr>
+                                    <th class="center">Sr.No</th>
+                                    <th class="center">Company Name</th>
+                                    <th class="center">Total Agents</th>
+                                    <th class="center">Agent</th>
+                                    <!-- <th class="center">Total Agents</th> -->
+                                    <th class="center">Contact Number</th>
+                                    <th class="center">Email</th>
+                                    <th class="center">City</th>
+                                    <th class="center">State</th>
+                                    <th class="center">Country</th>
+                                    <th class="center">Date</th>
+                                    <th class="center remove">Company Logo</th>
+                                    <th class="center">Designation</th>
+                                    <th class="center remove">Action</th>
+                                </tr>
+                            </thead>
+                            <!-- Table body -->
+                            <tbody>
+                                <?php
+                                $records_cnt = 0;
+                                if (!empty($company)) {
+                                    $i = $offset + 1;
+                                    foreach ($company as $companies) {
+                                        $records_cnt++;
+                                        $background = '';
+                                            if($companies->enquiry_status === 'queries-converted'){
+                                            $background = 'background: #02d530;color:#FFF;';                                                            
+                                            }
+                                        else if($companies->enquiry_status === 'only-one-query-converted'){
+                                            $background = 'background: orange;color:#FFF;';
+                                            }
+                                            else if($companies->enquiry_status === 'query-received-but-not-converted'){
+                                            $background = 'background: #0f4aff;color:#FFF;';
+                                            }
+                                            else{
+                                            $background = 'background:#bdbdbd;color:#FFF;';
+                                        }
+                                    ?>
+                                    <tr class="odd gradeX" style="">
+                                            <td class="center"><?= $i++ ?></td>
+                                            <td class="center"><?= ucwords(strtolower($companies->name)); ?>
+                                            </td>
+                                            <!-- <td class="center" id="totalRowsCell"
+                                                data-ids="<?= $companies->company; ?>">
+                                                <?= $companies->totalRows ?>
+                                            </td> -->
+                                            <td class="center">
+                                                <a class="btn" href="<?php echo base_url() . $companies->company; ?>/all-company-data"
+                                                    style="padding: 3px 10px;<?= $background?>;" title="View"><?= $companies->totalRows ?></a>
+                                            </td>
+                                            <td class="center"><?= $companies->contact_person ?></td>
+                                            <td class="center"><?= $companies->contact_person_number ?></td>
+                                            <td class="center"><?= $companies->email ?></td>
+                                            <td class="center"><?= ucwords(strtolower($companies->city)); ?>
+                                            </td>
+                                            <td class="center"><?= ucwords(strtolower($companies->state)); ?>
+                                            </td>
+                                            <td class="center"><?= ucwords(strtolower($companies->country)); ?>
+                                            </td>
+                                            <td class="center">
+                                                <?php $d = strtotime($companies->company_creation_date);
+                                                echo date('d-M-Y', $d); ?>
+                                            </td>
+                                            <td class="center remove"><img class="img-width"
+                                                    src="<?= base_url('assets/company/') . $companies->company_logo; ?>"
+                                                    alt=""></td>
+                                            <td class="center">
+                                                <?= ucwords(strtolower($companies->designation)); ?>
+                                            </td>
+                                            <td class="center" style="display:inline-flex;">
+                                                <?php if ($this->session->userdata('type') == 1) { ?>
+                                                    <a href="<?php echo base_url() . $companies->company_id; ?>/edit-client-logo"
+                                                        class="btn btn-tbl-edit btn-xs" title="Edit Logo"
+                                                        style="background-color: #FFF;"><i class="fa fa-image"
+                                                            style="color:#000;"></i></a>
+
+                                                    <a href="<?php echo base_url() . $companies->company; ?>/edit-company"
+                                                        class="btn btn-tbl-edit btn-xs" title="Edit"><i
+                                                            class="fa fa-edit"></i></a>
+
+                                                <?php } else if ($companies->user_id == $this->session->userdata('id')) { ?>
+
+                                                        <a href="<?php echo base_url() . $companies->company_id; ?>/edit-client-logo"
+                                                            class="btn btn-tbl-edit btn-xs" title="Edit Logo"
+                                                            style="background-color: #FFF;"><i class="fa fa-image"
+                                                                style="color:#000;"></i></a>
+
+                                                        <a href="<?php echo base_url() . $companies->company; ?>/edit-company"
+                                                            class="btn btn-tbl-edit btn-xs" title="Edit"><i
+                                                                class="fa fa-edit"></i></a>
+
+                                                <?php } ?>
+                                                <?php //if ($this->session->userdata('type') == 1) { ?>
+                                                    <!--a href="<?php //echo base_url() . $companies->company_id ?>/delete-client"
+                                                        onclick="return confirm('Are you sure you want to delete this ?');"
+                                                        class="btn btn-tbl-delete btn-xs" title="Delete">
+                                                        <i class="fa fa-trash-o "></i>
+                                                    </a-->
+                                                <?php //} ?>
+                                            </td>
+                                        </tr>
+                                    <?php }
+                                } ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </div>
+    </div>
+    </div>
+    </div>
+    </div>
+</div>
+<script>
+    var url = new URL(window.location.href);
+    $(document).ready(function () {
+        $('#client_data').DataTable({
+            responsive: true
+        });
+        $("#company").autocomplete({
+            source: function (request, response) {
+                // Fetch data
+                $.ajax({
+                    url: "<?= base_url() ?>admin/company/company_name_suggesstion",
+                    type: 'POST',
+                    dataType: "json",
+                    data: {
+                        search: request.term
+                    },
+                    success: function (data) {
+                        response(data);
+                        dt = data;
+                        $(".err").html('');;
+                    }
+                });
+            },
+            select: function (event, ui) {
+                // Set selection
+                $('#company').val(ui.item.label); // display the selected text
+                $('#company_id').val(ui.item.company_id); // save selected id to input
+                get_agents();
+            }
+        });
+        
+        if (url.searchParams.has('company_id')) {
+            get_agents();                
+        }
+        
+        function get_agents() {
+            if ($("#company_id").val() === "") {
+                $("#agent").empty();
+                return false;
+            }
+            var id = $('#company_id').val();
+
+            $.ajax({
+                type: "POST",
+                url: '<?= base_url(); ?>get-agent-ajax/' + id,
+                dataType: 'json',
+                success: function (response) {
+                    responseData = response.details; // Store the response data
+                    console.log(responseData)
+                    $("#agent").empty().parent().addClass("is-dirty");
+                    $('#agent').append('<option value="">Select..</option>');
+                    $.each(response.details, function (i, agent) {
+                        $('#agent').append('<option value="' + agent.contact_person +
+                            '">' + agent
+                                .contact_person + '</option>');
+                    });
+                },
+                complete:function(){ 
+                    $('#agent').val(url.searchParams.get('agent')); 
+                },
+                error: function (jqXHR, textStatus, errorThrown) {
+                    console.error("Error fetching agents:", errorThrown);
+                }
+            });
+        }
+
+        $("#country").autocomplete({
+            source: function (request, response) {
+                // Fetch data
+                $.ajax({
+                    url: "<?= base_url() ?>admin/company/get_country_ajax",
+                    type: 'post',
+                    dataType: "json",
+                    data: {
+                        search: extractLast(request.term),
+                    },
+                    success: function (data) {
+
+                        response(data);
+                    }
+                });
+            },
+            select: function (event, ui) {
+                var terms = split(this.value);
+                // remove the current input
+                terms.pop();
+                // add the selected item
+                terms.push(ui.item.label);
+                // add placeholder to get the comma-and-space at the end
+                terms.push("");
+                this.value = terms.join(", ");
+                if (terms.length > 2) {
+                    $("#state").val("").attr('disabled', 'disabled');
+                } else {
+                    $("#state").removeAttr('disabled');
+                    $('#country_id').val(ui.item.country_id); 
+                }
+                return false;
+            }
+        });
+
+        function split(val) {
+            return val.split(/,\s*/);
+        }
+
+        function extractLast(term) {
+            return split(term).pop();
+        }
+        $("#state").autocomplete({
+            source: function (request, response) {
+                // Fetch data
+                $.ajax({
+                    url: "<?= base_url() ?>admin/company/get_state_ajax",
+                    type: 'post',
+                    dataType: "json",
+                    data: {
+                        search: extractLast(request.term),
+                        country_id: $('#country_id').val()
+                    },
+                    success: function (data) {
+
+                        response(data);
+                    }
+                });
+            },
+            select: function (event, ui) {
+                // Set selection
+
+                var terms = split(this.value);
+                // remove the current input
+                terms.pop();
+                // add the selected item
+                terms.push(ui.item.label);
+                // add placeholder to get the comma-and-space at the end
+                terms.push("");
+                this.value = terms.join(", ");
+                if (terms.length > 2) {
+                    $("#city").val("").attr('disabled', 'disabled');
+                } else {
+                    $("#city").removeAttr('disabled');
+                    $('#state_id').val(ui.item.state_id);
+                }
+                return false;
+
+                //$('#state').val(ui.item.label); // display the selected text
+                //$('#state_id').val(ui.item.state_id); // save selected id to input
+                //return false;
+            }
+        });
+
+        $("#city").autocomplete({
+            source: function (request, response) {
+                // Fetch data
+                $.ajax({
+                    url: "<?= base_url() ?>admin/company/get_city_ajax",
+                    type: 'post',
+                    dataType: "json",
+                    data: {
+                        search: extractLast(request.term),
+                        state_id: $('#state_id').val()
+                    },
+                    success: function (data) {
+                        response(data);
+                    }
+                });
+            },
+            select: function (event, ui) {
+                // Set selection
+
+                var terms = split(this.value);
+                // remove the current input
+                terms.pop();
+                // add the selected item
+                terms.push(ui.item.label);
+                // add placeholder to get the comma-and-space at the end
+                terms.push("");
+                this.value = terms.join(", ");
+                return false;
+
+                //$('#city').val(ui.item.label); // display the selected text
+                //$('#company_id').val(ui.item.company_id); // save selected id to input
+                //return false;
+            }
+        });
+        
+        $("#enquiry_status").trigger("change");
+        $('.js-example-basic-multiple').select2({
+            //theme: 'filled',
+            placeholder: 'Select',
+        });
+        $("#year").on("change",function(){
+            if($(this).val().length > 1){
+                $("#months").val("all").select2();
+                $("#months").attr("disabled","disabled");
+            }else{ $("#months").removeAttr("disabled"); }
+            if($(this).val()!=""){
+                $("#months").val("all").select2();
+            }else{ $("#months").val("").select2(); }
+        });
+        $("#months").on("change",function(){
+            var m = $(this).val();
+            if(m.indexOf("all") !== -1){
+                $("#months").val("all").select2();
+            }
+        });	
+    });
+</script>

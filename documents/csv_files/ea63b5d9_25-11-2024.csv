@@ -1,0 +1,7 @@
+Category ID,Room Category Name,Room Size,Max Occupancy,Adults Allowed,Childs Allowed,Child With Bed (CWB/CNB/NA),Date From,Date To,Single Occupancy Price,Double Occupancy Price,Triple Occupancy Price,Four Occupancy Price,CWB
+1,Guest Room (King Bed),75 x 75,3,2,1,CWB,2024-01-01,31-03-2024,50000,60000,,,5000
+1,Guest Room (King Bed),75 x 75,3,2,1,CWB,2024-04-01,30-06-2024,60000,70000,,,6000
+1,Guest Room (King Bed),75 x 75,3,2,1,CWB,2024-07-01,30-09-2024,50000,60000,,,5000
+1,Guest Room (King Bed),75 x 75,3,2,1,CWB,2024-10-01,31-12-2024,80000,90000,,,7000
+2,Guest Room (Twin Bed),85 x 85,2,2,0,NA,2024-01-01,31-03-2024,65000,70000,,,0
+2,Guest Room (Twin Bed),85 x 85,2,2,0,NA,2024-04-01,30-06-2024,75000,80000,,,0

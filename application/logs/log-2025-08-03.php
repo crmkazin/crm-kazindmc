@@ -1,0 +1,34 @@
+<?php defined('BASEPATH') OR exit('No direct script access allowed'); ?>
+
+ERROR - 2025-08-03 00:01:07 --> 404 Page Not Found: Robotstxt/index
+ERROR - 2025-08-03 04:01:34 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 04:05:49 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 07:43:17 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 09:56:24 --> 404 Page Not Found: Robotstxt/index
+ERROR - 2025-08-03 11:48:10 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 12:18:50 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 12:48:26 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 12:49:44 --> 404 Page Not Found: Assets/company
+ERROR - 2025-08-03 12:50:04 --> 404 Page Not Found: Assets/company
+ERROR - 2025-08-03 12:52:13 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 12:53:25 --> 404 Page Not Found: Assets/company
+ERROR - 2025-08-03 12:54:18 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 13:41:34 --> 404 Page Not Found: Assets/company
+ERROR - 2025-08-03 13:49:49 --> 404 Page Not Found: Assets/company
+ERROR - 2025-08-03 13:59:05 --> 404 Page Not Found: Assets/company
+ERROR - 2025-08-03 14:46:54 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 14:56:30 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 15:05:41 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 15:59:06 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 16:02:28 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 16:28:26 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 16:32:00 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 16:34:55 --> 404 Page Not Found: Apple-touch-icon-120x120-precomposedpng/index
+ERROR - 2025-08-03 16:34:56 --> 404 Page Not Found: Apple-touch-icon-120x120png/index
+ERROR - 2025-08-03 16:34:57 --> 404 Page Not Found: Apple-touch-icon-precomposedpng/index
+ERROR - 2025-08-03 16:34:57 --> 404 Page Not Found: Apple-touch-iconpng/index
+ERROR - 2025-08-03 16:43:11 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 16:54:29 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 19:41:51 --> 404 Page Not Found: Assets/admin
+ERROR - 2025-08-03 19:48:18 --> 404 Page Not Found: Files/index
+ERROR - 2025-08-03 19:48:59 --> 404 Page Not Found: Files/index

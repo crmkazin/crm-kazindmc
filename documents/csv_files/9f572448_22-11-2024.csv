@@ -1,0 +1,3 @@
+Category ID,Room Category Name,Max Occupancy,Adults Allowed,Childs Allowed,Child With Bed (CWB/CNB/NA),Date from,Date to,Single Occupancy Price,Double Occupancy Price,Triple Occupancy Price,Four Occupancy Price,CWB
+437,Standard Room (King Bed),4,3,1,CWB,20-11-2024,21-11-2024,100,200,300,,50
+633,Demo 1,4,3,1,CWB,21-Nov,23-11-2024,1000,2000,,,500

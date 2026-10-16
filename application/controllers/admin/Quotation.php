@@ -1,0 +1,13684 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+require_once 'sendinblue/vendor/autoload.php';
+class Quotation extends CI_Controller {
+    
+    var $locations = LOCATIONS;
+    
+    public function __construct(){
+        parent::__construct();
+        if(!$this->session->userdata('email')){
+            redirect('login');
+        }
+        check_delete();
+        $this->load->model(['admin/enquiry_model','common_model','admin/company_model','admin/user_model','admin/dashboard_model']);
+        $this->load->library(['pagination','upload']);
+    }		
+
+    // ************************************* 11 Dec 2024 ************************************
+	public function fetch_suggesstions(){
+        //echo '<pre>';print_r($this->input->post());exit;
+        $capacity = $this->input->post('capacity');
+        $char = substr($this->input->post('enquiry_num'), 1, 2);
+	    $enquiry_id = base64_decode($this->input->post('enquiry_id'));
+	    $transport_id ='8';
+        
+        $country = COUNTRY_ABBR; //['A' => 'azerbaijan', 'B' => 'belarus', 'G' => 'georgia', 'K' => 'kazakhstan'];
+        $prefilled_city = ['azerbaijan'=>'Baku','belarus'=>'Minsk','georgia'=>'Tbilisi','kazakhstan'=>'Almaty','uzbekistan'=>'Tashkent'];
+        $data['prefilled_city'] = $prefilled_city[$country[$char]];
+        if($prefilled_city[$country[$char]] <>'')
+        {
+            $where = ' transportation.status = "active" AND LOWER(transportation.city) = "'.strtolower($prefilled_city[$country[$char]]).'"';
+        }else{
+            $where = ' transportation.status = "active" AND LOWER(transportation.country) = "'.$country[$char].'"';
+        }
+        // $where .= ' AND (transportation.capacity >='.$capacity.' AND transportation.capacity <='.($capacity+1).')';
+        $where .= ' AND transportation.capacity >= '.(int)$capacity;
+        $where .= ' AND EXISTS (SELECT 1 FROM transportation_costs tc WHERE tc.transport_id = transportation.id)';
+        $data['transportation'] = $this->common_model->get_data('transportation','', '', '*',$where, ' ORDER BY transportation.capacity ASC LIMIT 1', $count = false);
+
+        $join = [
+            [
+                'type' => 'LEFT',
+                'join_table' => 'location_masters',
+                'condition' => 'location_masters.id = sites.location_ids'
+            ],
+            [
+                'type' => 'LEFT',
+                'join_table' => 'outsidecity_transportation_costs',
+                'condition' => 'outsidecity_transportation_costs.sites_id = sites.id'
+            ]
+        ];
+
+        $type = 'sitescene';
+        $select = 'sites.id, sites.site_name, sites.days_of_operation, sites.entry_ticket_fee, sites.child_entry_ticket_fee, 
+                sites.duration, sites.departing_time_from_hotel, sites.duration_hours, sites.duration_minutes, outsidecity_transportation_costs.est_hour';
+
+        $base_where = 'sites.status = "active" 
+                    AND sites.category = "' . $type . '" 
+                    AND LOWER(sites.country) = "' . strtolower($country[$char]) . '" 
+                    AND LOWER(sites.city) = "' . strtolower($prefilled_city[$country[$char]]) . '" 
+                    AND outsidecity_transportation_costs.transport_id = "' . (int)$transport_id . '"';
+
+        $where_outsidecity = $base_where . ' AND location_masters.destination_type = "outsidecity"';
+        $data['sites_outsidecity'] = $this->common_model->get_data('sites', '', '', $select, $where_outsidecity, '', false, $join);
+
+        $select_inside = 'sites.id, sites.site_name, sites.days_of_operation, sites.entry_ticket_fee, sites.child_entry_ticket_fee, 
+                sites.duration, sites.departing_time_from_hotel, sites.duration_hours, sites.duration_minutes';
+        $base_where_inside = 'sites.status = "active" 
+            AND sites.category = "' . $type . '" 
+            AND LOWER(sites.country) = "' . strtolower($country[$char]) . '" 
+            AND LOWER(sites.city) = "' . strtolower($prefilled_city[$country[$char]]) . '"';
+        $where_insidecity = $base_where_inside . ' AND sites.location_ids = "0"';
+        $insidecity_join ='';
+        $data['sites_insidecity'] = $this->common_model->get_data('sites', '', '', $select_inside, $where_insidecity, '', false, $insidecity_join);
+
+        $where = 'currency_value.country ="'.strtolower($country[$char]).'" AND currency_value.status = "active" Order by currency_value.id DESC';
+        $data['currency'] = $this->common_model->get_data('currency_value','', '', '*',$where, '', $count = false)[0];
+        
+        $where = 'auxiliary_miscellaneous.country ="'.strtolower($country[$char]).'" AND auxiliary_miscellaneous.status="active"';
+        $data['mandatory_services'] = $this->common_model->get_data('auxiliary_miscellaneous','', '', '*',$where, '', $count = false);
+        
+        $where = 'auxiliary_transportation.country ="'.strtolower($country[$char]).'" AND auxiliary_transportation.status="active"';
+        $data['luggage_vehicle'] = $this->common_model->get_data('auxiliary_transportation','', '', '*',$where, ' LIMIT 1 ', $count = false);
+        
+        // $where = 'quotations.enquiry_id = '.$enquiry_id;
+        // $data['quotations'] = $this->common_model->get_data('quotations','', '', 'quotations.id, quotations.created, quotations.quot_final',$where, '', $count = false);
+        // $this->generate_itinerary();
+
+        $this->db->select('quotations.id, quotations.created, quotations.created_by, quotations.quot_final, admin.name as created_by_name');
+        $this->db->from('quotations');
+        $this->db->join('admin', 'admin.id = quotations.created_by', 'left');
+        $this->db->where('quotations.enquiry_id', $enquiry_id);
+        $query = $this->db->get();
+        $data['quotations'] = $query->result();
+        echo json_encode(['response' => 's', 'details' => $data, 'msg' => '']);
+    }
+    // dev@thavertech.com
+    //  private $openai_api_key = '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'; 
+   
+//     public function generate_itinerary()
+//     {
+//         $check_in_time = '8:35';
+//         $check_out_time = '23:15';
+//         $check_in_date = '2025-07-25';
+//         $check_out_date = '2025-07-30';
+
+//         $this->db->where('city', 'Almaty');
+//         $this->db->where('category', 'sitescene');
+//         $query = $this->db->get('sites'); 
+//         $sites = $query->result_array();
+
+//         if (empty($sites)) {
+//             echo "No sites found in the database.";
+//             return;
+//         }
+
+//         $siteDescriptions = array_map(function($site) {
+//             return $site['id'] . '. ' . $site['site_name'] . 
+//                 ' (Duration: ' . $site['duration_hours'] . 'h, Days: ' . $site['days_of_operation'] . 
+//                 ', Location ID: ' . $site['location_ids'] . ')';
+//         }, $sites);
+//         $siteList = implode(", ", $siteDescriptions);
+
+//         // Generate dates with day names
+//         $start = new DateTime($check_in_date);
+//         $end = new DateTime($check_out_date);
+//         $end->modify('+1 day'); // include checkout day
+//         $interval = new DateInterval('P1D');
+//         $dateRange = new DatePeriod($start, $interval, $end);
+//         $days = [];
+//         foreach ($dateRange as $index => $date) {
+//             $dayNum = $index + 1;
+//             $dayName = $date->format('l'); // Monday, Tuesday etc
+//             $dateStr = $date->format('Y-m-d');
+//             $days[] = [
+//                 'day' => $dayNum,
+//                 'date' => $dateStr,
+//                 'day_name' => $dayName
+//             ];
+//         }
+//         $dayConditions = [];
+//         foreach ($days as $day) {
+//             if ($day['day'] === 1 || $day['day'] === count($days)) {
+//                 $dayConditions[] = "Day {$day['day']} ({$day['date']}) is for location_id = 0 (inside city only)";
+//             } else {
+//                 $dayConditions[] = "Day {$day['day']} ({$day['date']}) allows 1 site with location_id != 0 (outside city) first, then location_id = 0 if time remains.";
+//             }
+//         }
+//         $dayLogic = implode("\n- ", $dayConditions);
+//         $prompt = <<<EOD
+//         You are a travel itinerary planner for tourists visiting Kazakhstan.
+//         Create a JSON itinerary using the following site list:
+//         $siteList
+//         Constraints:
+//         - Check-in: $check_in_date at $check_in_time
+//         - Check-out: $check_out_date at $check_out_time
+//         - Begin Day 1 two hours after check-in.
+//         - End the last day five hours before checkout ($check_out_time), so schedule the last activity to finish before that.
+//         - Daily schedule should be between 10:00 AM and 10:00 PM.
+//         - Add at least 1-hour break between activities.
+//         - Each activity's `start_time` must exactly match one of the site's available `departing_time_from_hotel` values.
+//         - If there is no valid `departing_time_from_hotel` available after the previous activity (including 1-hour buffer), either:
+//             - Move the activity to the next available day
+//             - Or skip it and mark as "unschedulable"
+//         - Avoid placing a site on a day it's not operational (check `days_of_operation`).
+//         - Do not repeat any site.
+//         - $dayLogic
+
+//         Each scheduled activity must include:
+//         - `id`
+//         - `site_name`
+//         - `start_time`
+//         - `end_time`
+//         - `duration_hours`
+//         - `departing_time_from_hotel`
+//         - `day_of_operation_used`
+//         For skipped or unschedulable sites (due to time or operational limits), add them to a separate `"unscheduled_activities"` array with reason.
+//         Return only valid JSON. No explanation or markdown.
+//         Output format:
+//         {
+//         "itinerary": [
+//             {
+//             "day": 1,
+//             "date": "YYYY-MM-DD",
+//             "activities": [
+//                 {
+//                 "id": 5,
+//                 "site_name": "Shymbulak Ski Resort",
+//                 "start_time": "10:00",
+//                 "end_time": "14:00",
+//                 "duration_hours": 4,
+//                 "departing_time_from_hotel": "10:00",
+//                 "day_of_operation_used": "Monday"
+//                 }
+//             ]
+//             }
+//         ],
+//         "unscheduled_activities": [
+//             {
+//             "id": 7,
+//             "site_name": "Kok Tobe Hill",
+//             "reason": "тЭМ No valid departing_time_from_hotel available after 20:00"
+//             }
+//         ]
+//         }
+//         EOD;
+
+//         $apiKey = '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';
+//         $endpoint = 'https://api.openai.com/v1/chat/completions';
+
+//         $postData = [
+//             'model' => 'gpt-4o-mini',
+//             'messages' => [
+//                 ['role' => 'system', 'content' => 'You are a helpful travel planner. Respond only with valid JSON.'],
+//                 ['role' => 'user', 'content' => $prompt]
+//             ],
+//             'temperature' => 0.7
+//         ];
+
+//         $headers = [
+//             'Content-Type: application/json',
+//             'Authorization: ' . 'Bearer ' . $apiKey
+//         ];
+
+//         $ch = curl_init();
+//         curl_setopt($ch, CURLOPT_URL, $endpoint);
+//         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+//         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
+//         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+//         $response = curl_exec($ch);
+//         curl_close($ch);
+
+//         $result = json_decode($response, true);
+
+//         if (isset($result['choices'][0]['message']['content'])) {
+//             $content = $result['choices'][0]['message']['content'];
+
+//             $cleaned = trim($content);
+//             $cleaned = preg_replace('/^```(json)?/i', '', $cleaned); 
+//             $cleaned = preg_replace('/```$/', '', $cleaned);       
+//             $cleaned = str_replace(['тАЬ', 'тАЭ'], '"', $cleaned);
+
+//             $itinerary = json_decode($cleaned, true);
+
+//             // After json_decode block is successful
+// if (json_last_error() === JSON_ERROR_NONE) {
+//     echo "<h3>ЁЯЧУя╕П Itinerary Preview:</h3>";
+
+//     foreach ($itinerary as $day) {
+//         echo "<h4>Day {$day['day']} тАУ {$day['date']}</h4><ul>";
+//         $previous_end = null;
+
+//         foreach ($day['activities'] as $index => &$activity) {
+//     $site_id = $activity['id'];
+//     $valid_times = $this->get_available_start_times($site_id);
+
+//     if (empty($valid_times)) {
+//         echo "<li><strong>{$activity['site_name']}</strong>: тЭМ No valid departing times found in DB.</li>";
+//         continue;
+//     }
+
+//     $duration = (int) $activity['duration_hours'];
+
+//     // Determine the earliest allowed start time
+//     if ($index === 0) {
+//         if ($day['day'] === 1) {
+//             $earliest = DateTime::createFromFormat('H:i', $check_in_time);
+//             if (!$earliest) {
+//                 echo "<li><strong>{$activity['site_name']}</strong>: тЭМ Invalid check-in time: {$check_in_time}</li>";
+//                 continue;
+//             }
+//             $earliest->modify('+2 hours');
+//         } else {
+//             $earliest = DateTime::createFromFormat('H:i', '10:00');
+//             if (!$earliest) {
+//                 echo "<li><strong>{$activity['site_name']}</strong>: тЭМ Could not parse default earliest time (10:00).</li>";
+//                 continue;
+//             }
+//         }
+//     } else {
+//         $earliest = DateTime::createFromFormat('H:i', $previous_end);
+//         if (!$earliest) {
+//             echo "<li><strong>{$activity['site_name']}</strong>: тЭМ Invalid previous end time: {$previous_end}</li>";
+//             continue;
+//         }
+//         $earliest->modify('+1 hour');
+//     }
+
+//     // Choose the next valid departing_time_from_hotel after the earliest allowed
+//     $selectedStart = null;
+//     foreach ($valid_times as $timeOption) {
+//         $candidate = DateTime::createFromFormat('H:i', $timeOption);
+//         if (!$candidate) continue; // skip malformed time
+
+//         if ($candidate >= $earliest) {
+//             $selectedStart = $candidate;
+//             break;
+//         }
+//     }
+
+//     if (!$selectedStart) {
+//         echo "<li><strong>{$activity['site_name']}</strong>: тЭМ No valid start time after " . $earliest->format('H:i') . ".</li>";
+//         continue;
+//     }
+
+//     $start = $selectedStart;
+//     $end = (clone $start)->modify("+{$duration} hours");
+
+//     $activity['start_time'] = $start->format('H:i');
+//     $activity['departing_time_from_hotel'] = $start->format('H:i');
+//     $activity['end_time'] = $end->format('H:i');
+//     $previous_end = $activity['end_time'];
+
+//     echo "<li><strong>{$activity['site_name']}</strong> ({$activity['start_time']} to {$activity['end_time']}) тАУ Duration: {$duration} hrs</li>";
+// }
+
+
+//         echo "</ul>";
+//     }
+// }
+//  else {
+//                 echo "тЭМ Failed to decode JSON. Error: " . json_last_error_msg();
+//                 echo "<hr><b>GPT Raw Output:</b><br><pre>" . htmlspecialchars($content) . "</pre>";
+//             }
+//         } else {
+//             echo "тЭМ Failed to generate itinerary: <pre>" . print_r($result, true) . "</pre>";
+//         }
+//     }
+//     private function get_available_start_times($site_id) {
+//     $this->db->select('departing_time_from_hotel');
+//     $this->db->from('sites');
+//     $this->db->where('id', $site_id);
+//     $query = $this->db->get();
+//     $result = $query->row_array();
+
+//     if (!empty($result) && !empty($result['departing_time_from_hotel'])) {
+//         // Split comma-separated times and trim each
+//         $times = explode(',', $result['departing_time_from_hotel']);
+//         return array_map('trim', $times); // e.g., ['10:00', '13:00', '17:00']
+//     }
+
+//     return []; // No times available
+// }
+    
+    // public function fetch_suggesstions(){
+    //     //echo '<pre>';print_r($this->input->post());exit;
+    //     $capacity = $this->input->post('capacity');
+    //     $char = substr($this->input->post('enquiry_num'), 1, 2);
+	   // $enquiry_id = base64_decode($this->input->post('enquiry_id'));
+        
+    //     $country = COUNTRY_ABBR;//['A' => 'azerbaijan', 'B' => 'belarus', 'G' => 'georgia', 'K' => 'kazakhstan'];
+    //     $prefilled_city = ['azerbaijan'=>'Baku','belarus'=>'Minsk','georgia'=>'Tbilisi','kazakhstan'=>'Almaty'];
+    //     $data['prefilled_city'] = $prefilled_city[$country[$char]];
+    //     if($prefilled_city[$country[$char]] <>''){
+    //         $where = ' transportation.status = "active" AND LOWER(transportation.city) = "'.strtolower($prefilled_city[$country[$char]]).'"';
+    //     }else{
+    //         $where = ' transportation.status = "active" AND LOWER(transportation.country) = "'.$country[$char].'"';
+    //     }
+    //     $where .= ' AND (transportation.capacity >='.$capacity.' AND transportation.capacity <='.($capacity+1).')';
+    //     $data['transportation'] = $this->common_model->get_data('transportation','', '', '*',$where, ' LIMIT 2', $count = false);
+
+    //     $type = 'sitescene';
+    //     $select = 'sites.id,sites.site_name,sites.days_of_operation,sites.entry_ticket_fee,sites.child_entry_ticket_fee, sites.duration, sites.departing_time_from_hotel, sites.duration_hours, sites.duration_minutes';
+    //     $where = 'sites.status= "active" AND sites.category = "'.$type.'" AND LOWER(sites.country) = "'.$country[$char].'"';
+    //     //$where .= ' AND location_masters.status = "active"';
+    // 	$join = [['type' => 'LEFT', 'join_table' => 'location_masters', 'condition' => 'location_masters.id = sites.location_ids'],];
+    // 	$where_outsidecity = '';//' AND location_masters.destination_type = "outsidecity"';
+    //     $data['sites_outsidecity'] = $this->common_model->get_data('sites','', '', $select,$where.$where_outsidecity,'', $count = false,$join);
+
+    //     $where_insidecity = '';//' AND location_masters.destination_type = "insidecity"';
+    //     //$data['sites_insidecity'] = $this->common_model->get_data('sites','', '', $select,$where.$where_insidecity,'', $count = false,$join);
+    //     $data['sites_insidecity'] = [];
+        
+    //     $where = 'currency_value.country ="'.strtolower($country[$char]).'" AND currency_value.status = "active"';
+    //     $data['currency'] = $this->common_model->get_data('currency_value','', '', '*',$where, '', $count = false)[0];
+        
+    //     $where = 'auxiliary_miscellaneous.country ="'.strtolower($country[$char]).'" AND auxiliary_miscellaneous.status="active"';
+    //     $data['mandatory_services'] = $this->common_model->get_data('auxiliary_miscellaneous','', '', '*',$where, '', $count = false);
+        
+    //     $where = 'auxiliary_transportation.country ="'.strtolower($country[$char]).'" AND auxiliary_transportation.status="active"';
+    //     $data['luggage_vehicle'] = $this->common_model->get_data('auxiliary_transportation','', '', '*',$where, ' LIMIT 1 ', $count = false);
+        
+    //     $where = 'quotations.enquiry_id = '.$enquiry_id;
+    //     $data['quotations'] = $this->common_model->get_data('quotations','', '', 'quotations.id',$where, '', $count = false);
+        
+    //     echo json_encode(['response' => 's', 'details' => $data, 'msg' => '']);
+    // }
+	
+    public function get_hotel_comparison_prices(){
+        //echo '<pre>';print_r($this->input->post());exit;
+        $type = implode('","',$this->input->post('type'));
+        $hotel_ids = $this->input->post('hotel_id');
+        $room_type = $this->input->post('room_type');
+        
+        $select = 'room_category_costing.price_with_breakfast,hotels.id,hotels.name';
+        $join = [['type' => '', 'join_table' => 'room_category_costing', 'condition' => 'room_category_costing.hotel_id=hotels.id'],];
+        $person_count = ['single'=>'1','twin'=>'2','triple'=>'3'];
+        $data['hotel_min_price'] = [];
+        //$data['hotel_max_price'] = '';
+        foreach($hotel_ids AS $k=>$list){            
+            foreach($person_count AS $key=>$person){
+                if(in_array($key,$room_type)){
+                    $where = ' hotels.status = "active" AND hotels.id = '.$list;
+                    $where .= ' AND hotels.category ="'.$type.'"';
+                    $where .= ' AND room_category_costing.person_count='.$person.' AND room_category_costing.type="adult" AND room_category_costing.status="active"';
+                    $hotel_min_price = $this->common_model->get_data('hotels','', '', $select,$where, ' ORDER BY room_category_costing.price_with_breakfast ASC LIMIT 1', $count = false,$join);
+                    if(!empty($hotel_min_price)){
+                        $data['hotel_min_price'][$k][$key] = $hotel_min_price[0]->price_with_breakfast;
+                        //$data['hotel_max_price'] = $this->common_model->get_data('hotels','', '', $select,$where.' AND hotels.id != '.$data['hotel_min_price'][0]->id, ' ORDER BY room_category_costing.price_with_breakfast DESC LIMIT 1', $count = false,$join);
+                    }else{
+                        $data['hotel_min_price'][$k][$key] = '';
+                    }
+                }else{
+                    $data['hotel_min_price'][$k][$key] = '';
+                }
+            }
+            $data['hotel_min_price'][$k]['hotel_name'] = $hotel_min_price[0]->name;
+        }
+        echo json_encode(['response' => 's', 'details' => $data, 'msg' => '']);
+        exit;
+    }
+    
+    public function aux_transportation_suggesstion()
+    {
+        $char = substr($this->input->post('location'), 1, 2);
+        $locations = COUNTRY_ABBR;//['A' => 'azerbaijan', 'B' => 'belarus', 'G' => 'georgia', 'K' => 'kazakhstan'];
+        $response = array();
+        $this->db->select('*');
+        $this->db->where("vehicle_type like '%" . trim($this->input->post('search')) . "%' ");
+        $this->db->where('status', 'active');
+        $this->db->where('LOWER(country)', $locations[$char]);
+        $this->db->limit(10);
+        $records = $this->db->get('auxiliary_transportation')->result();
+        foreach ($records as $row) {
+            $response[] = array("t_id" => $row->id, "label" => trim($row->vehicle_type),"price"=>trim($row->price));
+        }
+        echo json_encode($response);
+    }
+    
+   
+    public function get_transportation_suggesstion()
+    {
+        $city = $this->input->post('city');
+        $char = substr($this->input->post('location'), 1, 2);
+        $locations = COUNTRY_ABBR;
+        $response = array();
+
+        $this->db->distinct();
+        $this->db->select('transportation.id, transportation.vehicle_name, transportation.luggage_transport, transportation.capacity');
+        $this->db->from('transportation');
+        $this->db->join('transportation_costs', 'transportation_costs.transport_id = transportation.id', 'INNER');
+        $this->db->where("vehicle_name LIKE '%" . trim($this->input->post('search')) . "%'");
+        $this->db->where('transportation.status', 'active');
+        $this->db->where("transportation_costs.price != ''");
+
+        if ($city != '') {
+            $this->db->where('LOWER(transportation.city)', strtolower($city));
+        } else {
+            $this->db->where('LOWER(transportation.country)', $locations[$char]);
+        }
+
+        $this->db->limit(10);
+        $records = $this->db->get()->result();
+
+        foreach ($records as $row) {
+            $response[] = array(
+                "t_id" => $row->id,
+                "label" => trim($row->vehicle_name),
+                "luggage_vehicle" => $row->luggage_transport,
+                "capacity" => $row->capacity
+            );
+        }
+
+        echo json_encode($response);
+    }
+    
+    public function get_hotels(){
+        //echo '<pre>';print_r($this->input->post());exit;
+        $type = implode('","',$this->input->post('type'));
+        $select = 'hotels.id,hotels.name';
+        $where = ' hotels.status = "active" AND LOWER(hotels.city) = "'.strtolower(trim($this->input->post('hotel_city'))).'"';
+        $where .= ' AND hotels.category IN ("'.$type.'")';
+        $data['hotels'] = $this->common_model->get_data('hotels','', '', $select,$where, '',$count = false);
+        echo json_encode(['response' => 's', 'details' => $data, 'msg' => '']);
+        exit;
+    }
+
+
+    public function hotel_city(){
+        $char = substr($this->input->post('enquiry_num'), 1, 2);
+        $country = COUNTRY_ABBR;//['A' => 'azerbaijan', 'B' => 'belarus', 'G' => 'georgia', 'K' => 'kazakhstan'];
+        $response = array();
+        $this->db->select('DISTINCT(hotels.city)');
+        $this->db->where("hotels.city like '%" . trim($this->input->post('search')) . "%' ");
+        $this->db->where('hotels.status', 'active');
+        $this->db->where('LOWER(hotels.country)',$country[$char]);
+        $this->db->limit(10);
+        $records = $this->db->get('hotels')->result();
+        foreach ($records as $row) {
+            $response[] = array("hotel_city" => trim($row->city), "label" => trim($row->city));
+        }
+        echo json_encode($response);
+    }
+
+    public function transport_prices(){
+        //echo '<pre>';print_r($this->input->post());exit;
+        $check_in = $this->input->post('checkin_date');
+        $check_out = $this->input->post('checkout_date');
+        $site_id = $this->input->post('site_id');
+        $transport_id = $this->input->post('transports_id');
+
+        $where = 'outsidecity_transportation_costs.sites_id = '.$site_id.' AND outsidecity_transportation_costs.transport_id IN ('.$transport_id.') AND outsidecity_transportation_costs.status = "active"';
+        $where .= ' AND date(outsidecity_transportation_costs.valid_from) <= "'.$check_in.'" AND date(outsidecity_transportation_costs.valid_to) >= "'.$check_out.'"';
+        $join = [['type' => 'LEFT', 'join_table' => 'transportation', 'condition' => 'transportation.id = outsidecity_transportation_costs.transport_id'],];
+        $data['transportation'] = $this->common_model->get_data('outsidecity_transportation_costs','', '', '*',$where, '', $count = false,$join);
+		
+        //if(empty($data['transportation'])){
+        $where = ' transportation_costs.transport_id IN ('.$transport_id.') AND transportation_costs.type IN ("full-day")';
+        $where .= ' AND date(transportation_costs.valid_from) <= "'.$check_in.'" AND date(transportation_costs.valid_to) >= "'.$check_out.'"';
+        $join = [['type' => 'LEFT', 'join_table' => 'transportation', 'condition' => 'transportation.id = transportation_costs.transport_id'],];
+        $data['transportation_cost'] = $this->common_model->get_data('transportation_costs','', '', '*',$where, '', $count = false,$join);
+        //}
+        //echo $this->db->last_query();'<pre>';print_R($data);exit;
+        echo json_encode(['response' => 's', 'details' => $data, 'msg' => '']);
+        exit;
+    }
+	
+    public function save_and_email(){
+	//echo '<pre>'; print_r($this->input->post());exit;
+		
+        $this->form_validation->set_rules('itinerary_date[]', 'Itinerary Date', 'trim|required');
+        //$this->form_validation->set_rules('itinerary_time_0[]', 'Itinerary Time', 'trim|required');        
+        $this->form_validation->set_rules('enquiry_id', 'Id', 'trim|required');
+        $this->form_validation->set_error_delimiters('', '<br>');  
+        if($this->form_validation->run() == FALSE){
+            echo json_encode(['response'=>'e','msg'=> '<div class="alert alert-danger">'.validation_errors().'</div>']);
+            exit;
+        }
+        $cnt = count($this->input->post('itinerary_date'));
+        $created = date('Y-m-d H:i:s');
+        $enquiry_id = $this->input->post('enquiry_id');
+        
+        $where = ' enquiry.id = '.$enquiry_id;
+        $join = [['type' => 'LEFT', 'join_table' => 'company_details', 'condition' => 'company_details.company_id = enquiry.company_details_id'],
+                        ['type' => 'LEFT', 'join_table' => 'company', 'condition' => 'company.company_id = enquiry.company_id'],];
+        $enquiry = $this->common_model->get_data('enquiry','', '', '*',$where, '', $count = false,$join)[0];
+
+        //echo '<pre>';print_r($enquiry);exit;
+        $total_persons = $enquiry->number_persons + $enquiry->number_child;
+        $char = substr($enquiry->enquiry_abbr, 1, 2);
+        $country = COUNTRY_ABBR;//['A' => 'Azerbaijan', 'B' => 'Belarus', 'G' => 'Georgia', 'K' => 'Kazakhstan'];
+        $where = 'currency_value.country ="'.strtolower($country[$char]).'"';
+        $currency = $this->common_model->get_data('currency_value','', '', '*',$where, '', $count = false)[0];
+
+        $email_subject = $enquiry->enquiry_no.' / '.$enquiry->name.' / '.$enquiry->enquiry_abbr.' - '.$enquiry->contact_person.' X '.$total_persons.' - KAZIN '.strtoupper($country[$char]);
+
+        $table_itinerary='<table cellspacing="0" cellpadding="0" dir="ltr" border="1" style="table-layout:fixed;font-size:10pt;font-family:Arial;border-collapse:collapse;border:none">
+            <tbody>
+            <tr style="height:21px">
+                    <td style="border:1px solid rgb(0,0,0);overflow:hidden;padding:2px 3px;vertical-align:bottom;background-color:rgb(255,242,204);font-size:11pt;font-weight:bold;text-align:center" rowspan="1" colspan="5">Day wise Itinerary - 4 Night - 5 Days
+                    </td>
+            </tr><tr style="">
+            <td style="border-width:1px;border-style:solid;border-color:rgb(204,204,204) rgb(0,0,0) rgb(0,0,0);overflow:hidden;padding:2px 3px;vertical-align:bottom;font-size:11pt" rowspan="1" colspan="5">';
+        $html = '';
+        $total_transportation_outside = 0;
+        $total_transportation_inside = 0;
+        $total_transportation = 0;
+        for($i=0;$i<$cnt;$i++){
+            $cnt_text = count($this->input->post('itinerary_title_search_'.$i));
+            for($j=0;$j<$cnt_text;$j++){
+                    if($j==0){
+                            $html .= $this->input->post('itinerary_date')[$i].'<ol>'; 
+                    }
+                    $t = (($this->input->post('itinerary_time_' . $i)[$j]<>'')?'('.$this->input->post('itinerary_time_' . $i)[$j].') ':'');
+                    $html .= '<li>'.$t.$this->input->post('itinerary_title_search_' . $i)[$j].'</li>';
+            }
+            $html .= '</ol><br>';
+            if(array_key_exists('hdn_transportation_outside_'.$i,$this->input->post())){
+                    $total_transportation_outside = $total_transportation_outside + $this->input->post('hdn_transportation_outside_'.$i);
+            }
+            if(array_key_exists('hdn_transportation_inside_'.$i,$this->input->post())){
+                    $total_transportation_inside = $total_transportation_inside + $this->input->post('hdn_transportation_inside_'.$i);
+            }
+        }
+        $total_transportation = $total_transportation_outside + $total_transportation_inside;
+        if(array_key_exists('hdn_airport_in_total',$this->input->post())){
+                $total_transportation = $total_transportation + $this->input->post('hdn_airport_in_total');
+        }
+        if(array_key_exists('hdn_airport_out_total',$this->input->post())){
+                $total_transportation = $total_transportation + $this->input->post('hdn_airport_out_total');
+        }
+        $table_itinerary.= $html.'</td></tr></tbody></table>';
+
+        //echo 'Transportation : '.$total_transportation;
+
+        $grand_total_1 = $total_transportation + $this->input->post('hotel_total_1');
+        $grand_total_1 = $grand_total_1 + ($grand_total_1 * ($this->input->post('markup_percentage')/100));
+        $grand_total_2 = $total_transportation + $this->input->post('hotel_total_2');
+        $grand_total_2 = $grand_total_2 + ($grand_total_2 * ($this->input->post('markup_percentage')/100));
+
+        //echo 'Total 1:'. $grand_total_1.'__Total 2:'.$grand_total_2;
+
+        $per_person_cost_1 = round($grand_total_1/$total_persons);
+        $per_person_cost_1 = round($per_person_cost_1/$currency->country_currency_value); // In dollars
+
+        $per_person_cost_2 = round($grand_total_2/$total_persons);
+        $per_person_cost_2 = round($per_person_cost_2/$currency->country_currency_value); // In dollars
+        //echo 'PP 1 :'.$per_person_cost_1.'__PP 2'.$per_person_cost_2;exit;
+        $credentials = SendinBlue\Client\Configuration::getDefaultConfiguration()->setApiKey('api-key', SENDINBLUE_API_KEY);
+        $apiInstance = new SendinBlue\Client\Api\TransactionalEmailsApi(new GuzzleHttp\Client(),$credentials);
+
+        $sendSmtpEmail = new \SendinBlue\Client\Model\SendSmtpEmail([
+            'subject' => $email_subject,
+            'sender' => ['name' => 'KAZIN SUPPORT', 'email' => 'back.office@kazindmc.com'],
+            'replyTo' => ['name' => 'KAZIN SUPPORT', 'email' => 'back.office@kazindmc.com'],
+            'to' => [
+                // [ 'name' => 'Sumeet Verma', 'email' => 'sumeetthaver@gmail.com'],
+					[ 'name' => 'Vikash choudhary', 'email' => 'vikash.thaver@gmail.com'],
+					],
+            //'cc' => [['name' => 'Rohit', 'email' => 'rohit@kazindmc.com']],
+            //'bcc' => [['name' => '', 'email' => '']],
+            'htmlContent' => '<!DOCTYPE html><html><head>
+                        <style>
+                        th, td {
+                          padding: 5px;
+                          text-align: left;
+                        }
+                        </style>
+                    </head><body>
+                    <table style="width:100%">
+                    <tr><td colspan="12" align="left">Dear Teams,</td></tr><tr><td colspan="12"></td></tr>
+                    <tr><td colspan="12" align="left">Greetings from Kazin DMC!!</td></tr>
+                    <tr><td colspan="12" align="left">COMMERCIAL PROPOSAL OF ALMATY FOR '.$enquiry->number_of_nights.'N/'.($enquiry->number_of_nights+1).'D based on '.$total_persons.' Pax : -</td></tr>
+                    <tr><td colspan="12" align="left">'.$enquiry->number_of_nights.'N Land Package ('.(($this->input->post('hotel_status')=="yes")?"<label style=`color:#33d70b;`>With Hotel</label>":"<label style=`color:#ff2c17;`>Without Hotel</label>").')</td></tr>
+                    <tr><td colspan="12" align="left">Cost : U$ '.$per_person_cost_1.' PP [ '.$this->input->post('hotel_names_1').' ]</td></tr>
+                    <tr><td colspan="12" align="left">Cost : U$ '.$per_person_cost_2.' PP [ '.$this->input->post('hotel_names_2').' ]</td></tr>
+
+                    <tr><td colspan="12" align="left">'.$table_itinerary.'</td></tr>
+                    <tr><td colspan="12" align="left"><mark>IMPORTANT NOTE:</mark> - The above package has been calculated based on todayтАЩs ROE of 1 USD = '.$currency->currency_abbr.' '.$currency->country_currency_value.'. Any change in currency fluctuation will affect your final package cost which will be calculated on the day of final payment.</td></tr>  
+                    <tr><td colspan="12" align="left"><mark>INCLUSIONS:</mark> <br>'.$this->input->post('inclusions').' </td></tr>  
+                    <tr><td colspan="12" align="left"><mark>EXCLUSIONS:</mark> <br>'.$this->input->post('exclusions').' </td></tr>  
+                    <tr><td colspan="12" align="left"><mark>IMPORTANT NOTES:</mark> <br>'.$this->input->post('important_notes').' </td></tr>  
+                    <tr><td colspan="12" align="left"><mark>CANCELLATION POLICY:</mark> <br>'.$this->input->post('cancellation_policy').' </td></tr>  
+                    <tr><td colspan="12" align="left" height="25px"></td></tr><tr><td colspan="12" align="left">Regards,    </td></tr>
+                    <tr><td colspan="12" align="left">Jasmine <br>
+						OPS - FIT DESK (KAZAKHSTAN) </td></tr>
+                    </table></body></html>',
+             /*'params' => ['bodyMessage' => '']*/
+        ]);
+
+        try {
+            $sendinblue_response = $apiInstance->sendTransacEmail($sendSmtpEmail);
+            //print_r($sendinblue_response);
+        } catch (Exception $e) {
+            //echo $e->getMessage(),PHP_EOL;
+        }
+		
+        
+        $response = ['response'=>'s','details'=>'','msg'=>'<div class="alert alert-success">Quotation Emailed Successfully!</div>'];
+        echo json_encode($response);
+        exit;		
+	}
+    
+    
+    public function save_and_email_new()
+    {
+        $this->form_validation->set_rules('itinerary_date[]', 'Itinerary Date', 'trim|required'); 
+        $this->form_validation->set_rules('enquiry_id', 'Id', 'trim|required');
+        $this->form_validation->set_error_delimiters('', '<br>');  
+        if($this->form_validation->run() == FALSE){
+            echo json_encode(['response'=>'e','msg'=> '<div class="alert alert-danger">'.validation_errors().'</div>']);
+            exit;
+        }
+        $cnt = count($this->input->post('itinerary_date'));
+        $created = date('Y-m-d H:i:s');
+        $enquiry_id = $this->input->post('enquiry_id');
+    
+        $where = ' enquiry.id = '.$enquiry_id;
+        $join = [['type' => 'LEFT', 'join_table' => 'company_details', 'condition' => 'company_details.company_id = enquiry.company_details_id'],
+                 ['type' => 'LEFT', 'join_table' => 'company', 'condition' => 'company.company_id = enquiry.company_id'],];
+        $enquiry = $this->common_model->get_data('enquiry','', '', '*',$where, '', $count = false,$join)[0];
+
+        $total_persons_new = $enquiry->number_persons + $enquiry->number_child;
+        $total_persons = $enquiry->number_persons;
+        $total_child_persons = $enquiry->number_child;
+        $char = substr($enquiry->enquiry_abbr, 1, 2);
+        $country = COUNTRY_ABBR;
+        $where = 'currency_value.country = "'.strtolower($country[$char]).'" AND currency_value.status = "active" Order by currency_value.id DESC';
+        $currency = $this->common_model->get_data('currency_value','', '', '*',$where, '', $count = false)[0];
+
+        $email_subject = $enquiry->enquiry_no.' / '.$enquiry->name.' / '.$enquiry->enquiry_abbr.' - '.$enquiry->contact_person.' X '.$total_persons.' - KAZIN '.strtoupper($country[$char]);
+        
+        $stay_html = '';
+        
+        $guide = $this->input->post('driver_cum_guide') == 'guide' ? 'Guide' : 'Driver Cum Guide';
+        $roe = $this->input->post('roe');
+        
+        $transportation_guide = '<tr><td colspan="12" align="left"><span style="color:#1974D2;text-decoration:underline;font-weight:bold;">TRANSPORTATION & GUIDE</span> <br>'.$this->input->post('inclusions').' </td></tr>';
+        
+        $table_itinerary='<table cellspacing="0" cellpadding="0" dir="ltr" border="1" style="table-layout:fixed;font-size:10pt;font-family:Arial;border-collapse:collapse;border:none">
+            <div>
+            <h4 class="title">Day wise Itinerary - '.$enquiry->number_of_nights.' Night - '.($enquiry->number_of_nights+1).' Days <h4>
+            </div>
+        <tbody>
+            '.$stay_html.$transportation_guide.'<tr style="">
+            <td style="border-width:1px;overflow:hidden;padding:2px 3px;vertical-align:bottom;font-size:11pt" rowspan="1" colspan="5">';
+        $html = '<span style="color:#1974D2;text-decoration:underline;font-weight:bold;">ENTRANCE & ACTIVITIES</span><br>';
+        // $total_transportation_outside = 0;
+        // $total_transportation_inside = 0;
+        $total_transportation = 0;
+        $n=0;
+        $html .= '<ol>'; 
+        for($i=0;$i<$cnt;$i++){            
+            $cnt_text = !empty($this->input->post('itinerary_title_search_'.$i))?count($this->input->post('itinerary_title_search_'.$i)):0;
+            for($j=0;$j<$cnt_text;$j++){
+                if($j==0){
+                    //$html .= /*$this->input->post('itinerary_date')[$i].*/'<ol>'; 
+                }
+                $t = (($this->input->post('itinerary_time_' . $i)[$j]<>'')?'('.$this->input->post('itinerary_time_' . $i)[$j].') ':'');
+                $html .= '<li>'.$t.$this->input->post('itinerary_title_search_' . $i)[$j].'</li>';
+                //if(array_key_exists('itinerary_activities_'.$i.'_'.$n, $this->input->post()) && $this->input->post('itinerary_activities_'.$i.'_'.$n) != ""){
+                if(!empty($this->input->post('itinerary_activities_'.$i))){
+                    $html .= '<ul>';
+                    foreach($this->input->post('itinerary_activities_'.$i) AS $activity){
+                        if($activity != ""){
+                            $html .= '<li>'.$activity.'</li>';
+                        }
+                    }
+                    $html .= '</ul>';
+                }
+            }
+            $n++;
+        }
+        $html .= '</ol><br>';
+        $meals_html = '<tr style=""><td style="overflow:hidden;padding:2px 3px;vertical-align:bottom;font-size:11pt" rowspan="1" colspan="5">';
+        $meals_html .= '<span style="color:#1974D2;text-decoration:underline;font-weight:bold;">MEALS</span>';
+        $meals_html .= '<ol><li>Breakfast</li></ol></td></tr>';
+        
+        $table_itinerary.= $html.'</td></tr>'.$meals_html.'</tbody></table>';
+        
+        // $total_transportation = $total_transportation_outside + $total_transportation_inside;
+        // if(array_key_exists('hdn_airport_in_total',$this->input->post())){
+        //     $total_transportation = $total_transportation + $this->input->post('hdn_airport_in_total');
+        // }
+        if(array_key_exists('final_transport',$this->input->post())){
+            $total_transportation = $this->input->post('final_transport');
+        }
+        //echo 'Transportation : '.$total_transportation.'<br>';
+        
+        $activities_total = 0;
+        if(array_key_exists('hdn_activities_total',$this->input->post()) && !empty($this->input->post('hdn_activities_total'))){
+            foreach($this->input->post('hdn_activities_total') AS $list)
+                {
+                $activities_total = $activities_total + (int)$list;
+            }
+        }
+        $restaurants_grand_total = 0;
+        /*if(array_key_exists('hdn_restaurants_grand_total',$this->input->post())){
+            $restaurants_grand_total = $restaurants_grand_total + $this->input->post('hdn_restaurants_grand_total');
+        }*/
+        $guide_grand_total = 0;
+        if(array_key_exists('hdn_guide_grand_total',$this->input->post())){
+            $guide_grand_total = (int)$this->input->post('hdn_guide_grand_total');
+        }
+        // echo 'Guide : '.$guide_grand_total. '<br>';
+        $hdn_mandatory_grand_total = 0;
+        if(array_key_exists('hdn_mandatory_grand_total',$this->input->post())){
+            $hdn_mandatory_grand_total = $this->input->post('hdn_mandatory_grand_total');
+        }
+        $all_day_activities_total = 0;
+        if(array_key_exists('all_day_activities_total',$this->input->post())){
+            $all_day_activities_total = $this->input->post('all_day_activities_total');
+        }
+        // echo 'Mandatory : '.$hdn_mandatory_grand_total. '<br>';
+       
+        // $hdn_lugguage_total = 0;
+        // if(array_key_exists('hdn_luggage_price',$this->input->post())){
+        //     $hdn_lugguage_total = $hdn_lugguage_total + (int)$this->input->post('hdn_luggage_price');
+        // }
+        $grandTotalMeal = $this->input->post('grandTotalMeal');
+        $meal_type_daywise_price = $this->input->post('meal_type_daywise_price');
+        $entertainment_daywise_data  = $this->input->post('entertainment_daywise_data');
+        $fremark = $this->input->post('fremark');
+        $remark_html = '';
+        if (!empty($fremark)) {
+            // $remark_html = '<tr><td colspan="12" align="left"><b>Remark</b>: ' . $fremark . '</td></tr>';
+            $remark_html = '<tr>
+                    <td colspan="12" style="padding:0;">
+                        <div style="background-color:#d6d8d9;padding:3px 3px;display:inline-block;">
+                            <div style="background-color:#fff;padding:5px 8px;display:inline-block;line-height:20px;word-break:break-word;">
+                                <strong style="color:#000;">Remark :</strong>
+                                <span>'.$fremark.'</span>
+                            </div>
+                        </div>
+                    </td>
+                </tr>';
+        }
+        
+        $hdn_final_ticket_price = 0;
+        if(array_key_exists('hdn_final_ticket_price',$this->input->post())){
+            $hdn_final_ticket_price = $this->input->post('hdn_final_ticket_price');
+        }
+        $final_toll_price = $this->input->post('final_toll_price');
+        // echo 'Ticket Price : '.$hdn_final_ticket_price. '<br>';
+        if(array_key_exists('hotel_names_category_wise', $this->input->post())){
+            $hotel_names_category_wise = json_decode($this->input->post('hotel_names_category_wise'), true);
+            // print_r($hotel_names_category_wise);
+        }
+
+        $hotel_costing_category_wise = 0;
+        if(array_key_exists('hotel_costing_category_wise', $this->input->post())){
+            $hotel_costing_category_wise = json_decode($this->input->post('hotel_costing_category_wise'), true);
+            //  print_r($hotel_costing_category_wise);   
+        }
+
+        $hotel_room_category_names_wise = 0;
+        if(array_key_exists('hotel_room_category_names_wise', $this->input->post())){
+            $hotel_room_category_names_wise = json_decode($this->input->post('hotel_room_category_names_wise'), true);
+            // print_r($hotel_room_category_names_wise);
+        }
+
+        // $hotel_costing_category_wise_child = 0;
+        // if(array_key_exists('hotel_costing_category_wise_child', $this->input->post())){
+        //     $hotel_costing_category_wise_child = json_decode($this->input->post('hotel_costing_category_wise_child'), true);
+        // }
+        
+        $hotel_costing_category_wise_child = 0;
+        if(array_key_exists('hotel_cnb_per_person', $this->input->post())){
+            $hotel_costing_category_wise_child = json_decode($this->input->post('hotel_cnb_per_person'), true);
+        }
+        $hotel_costing_category_wise_child_cwb = 0;
+        if(array_key_exists('hotel_cwb_per_person', $this->input->post())){
+            $hotel_costing_category_wise_child_cwb = json_decode($this->input->post('hotel_cwb_per_person'), true);
+        }
+
+        $hdn_final_child_ticket_price = 0;
+        if(array_key_exists('hdn_final_child_ticket_price', $this->input->post())){
+            $hdn_final_child_ticket_price = json_decode($this->input->post('hdn_final_child_ticket_price'), true);
+        }
+
+        $hdn_final_group_ticket_price = 0;
+        if(array_key_exists('hdn_final_group_ticket_price', $this->input->post())){
+            $hdn_final_group_ticket_price = json_decode($this->input->post('hdn_final_group_ticket_price'), true);
+        }
+
+        $all_day_child_activities_total = 0;
+        if(array_key_exists('all_day_child_activities_total', $this->input->post())){
+            $all_day_child_activities_total = json_decode($this->input->post('all_day_child_activities_total'), true);
+        }
+        
+        $all_day_group_activities_total = 0;
+        if(array_key_exists('hdn_group_activity_total', $this->input->post())){
+            $all_day_group_activities_total = json_decode($this->input->post('hdn_group_activity_total'), true);
+        }
+
+        $cost_html = '';
+        if ($this->input->post('hotel_status') == 'yes'){
+            
+             if ($this->input->post('hdn_group_type') == 'family') 
+            {
+                    $has_any_night = false;
+                    foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotelId => $hotelData) {
+                            if (!empty($hotelData['nights'])) {
+                                // Check if any night > 0
+                                $filtered_nights = array_filter($hotelData['nights'], fn($v) => $v > 0);
+                                if (!empty($filtered_nights)) {
+                                    $has_any_night = true;
+                                    break 2; // exit both loops
+                                }
+                            }
+                        }
+                    }
+                    $cost_html = '';
+                    if (!$has_any_night) {
+                    $cost_html .= '<table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width:100%; text-align: left;">';
+
+                    $cost_html .= '<tr><th style="background-color: #d6d8d9;">Rating</th>';
+                    foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                        $room_cat_list = $hotel_room_category_names_wise[$rating_key] ?? [];
+                        $colspan = max(count($hotels), 1); 
+                        $rating_display = ucwords(str_replace('_', ' ', $rating_key));
+
+                        $cost_html .= '<th colspan="' . $colspan . '" style="background-color: #d6d8d9;">' . $rating_display . '</th>';
+                    }
+                    $cost_html .= '</tr>';
+
+                    $cost_html .= '<tr><th style="background-color: #d6d8d9;">Hotel</th>';
+                    foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotelId => $hotelData) {
+                            $hotel_name = $hotelData['hotel_name'] ?? '-';
+                            // $nights = isset($hotelData['nights']) ? ' (' . $hotelData['nights'] . 'N)' : '';
+                            $nights_value = '';
+                            if (!empty($hotelData['nights'])) {
+                                $nights_value = is_array($hotelData['nights']) 
+                                    ? implode(',', array_filter($hotelData['nights'])) 
+                                    : $hotelData['nights'];
+                                    $nights = ' (' . $nights_value . ' N)';
+                            } else {
+                                $nights = '';
+                            }
+                            
+                            $cost_html .= '<td style="background-color: #d6d8d9;font-weight:bold;color:#6060a9;">' . $hotel_name . $nights . '</td>';
+                        }
+                    }
+                    $cost_html .= '</tr>';
+                    $cost_html .= '<tr><th style="background-color: #d6d8d9;">Room Category</th>';
+                    foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotelId => $hotelName) {
+                            $room_categories = $hotel_room_category_names_wise[$rating_key][$hotelId] ?? [];
+                            if (!empty($room_categories)) {
+                                $cost_html .= '<td style="background-color: #d6d8d9;">' . implode('<br>', $room_categories) . '</td>';
+                            } else {
+                                $cost_html .= '<td style="background-color: #d6d8d9;">-</td>';
+                            }
+                        }
+                    }
+                    $cost_html .= '</tr>';
+                    $label = ($nights == '') ? "Cost Per Person" : "Hotel Cost Per Person";
+                    $cost_html .= '<tr><th style="background-color: #d6d8d9;">'. $label .'</th>';
+                    // $cost_html .= '<tr><th style="background-color: #90e0ef;">Cost Per Person</th>';
+                    foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotelId => $hotelName) {
+                            $hotel_cost = $hotel_costing_category_wise[$rating_key][$hotelId] ?? 0;
+
+                            $markup_percentage = floatval($this->input->post('markup_percentage'));
+                            $hotel_markup_percentage = floatval($this->input->post('hotel_markup_percentage'));
+                            if(!empty($hotel_markup_percentage))
+                            {
+                                $hotel_cost += ($hotel_cost * ($hotel_markup_percentage / 100));
+                                
+                            }else{
+                                $hotel_cost += ($hotel_cost * ($markup_percentage / 100));
+                            }
+
+                            if($nights =='')
+                            {
+                                $grand_total = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price;
+                                $grand_total += ($grand_total * ($markup_percentage / 100));
+                            }
+                            else{
+                                $grand_total = $hotel_cost;
+                            }
+                            
+                            // $markup_percentage = floatval($this->input->post('markup_percentage'));
+                            // $grand_total += ($grand_total * ($markup_percentage / 100));
+                            $grand_total_new = $hotel_cost;
+                            if(empty($hotel_markup_percentage))
+                                {
+                                    $grand_total_new += $grand_total;
+                                };
+
+                            $per_person_cost = ($total_persons > 0 && $roe > 0)
+                                ? round(($grand_total_new / $total_persons) / $roe)
+                                : 0;
+
+                            $cost_html .= '<td style="background-color: #d6d8d9;">$' . $per_person_cost . '</td>';
+                        }
+                    }
+                    $cost_html .= '</tr>';
+                    
+                    // Add Child Cost Per Person row if child data exists
+                    $has_child_data = false;
+                    foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotelId => $hotelName) {
+                            // Check if the key exists (not using ?? 0) to distinguish between null and 0
+                            $child_cost_exists = isset($hotel_costing_category_wise_child[$rating_key][$hotelId]);                
+                            if ($child_cost_exists) {
+                                $has_child_data = true;
+                                break 2;
+                            }
+                        }
+                    }
+
+                    if ($has_child_data) 
+                    {
+                        $cost_html .= '<tr><th style="background-color: #d6d8d9; color: black;">Cost CNB Per Child</th>';
+                        foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                            foreach ($hotels as $hotelId => $hotelName) {
+                                // Check if CNB cost exists for this hotel
+                                $child_cost_exists = isset($hotel_costing_category_wise_child[$rating_key][$hotelId]);
+                                
+                                if ($child_cost_exists) {
+                                    $child_cost = $hotel_costing_category_wise_child[$rating_key][$hotelId];
+                                    
+                                    $markup_percentage = floatval($this->input->post('markup_percentage'));
+                                    $hotel_markup_percentage = floatval($this->input->post('hotel_markup_percentage'));
+                                    
+                                    if(!empty($hotel_markup_percentage)) {
+                                        $child_cost += ($child_cost * ($hotel_markup_percentage / 100));
+                                    } else {
+                                        $child_cost += ($child_cost * ($markup_percentage / 100));
+                                    }
+
+                                    $total_child_persons = $total_child_persons ?? $total_persons;
+                                    if($nights == '') {
+                                        // Use child-specific variables for child calculations
+                                        $grand_total_child = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+                                        $grand_total_child += ($grand_total_child * ($markup_percentage / 100));
+                                        $grand_total_child = $grand_total_child / $total_child_persons ;
+                                    } else {
+                                        $grand_total_child = $child_cost;
+                                    }
+                                    
+                                    $grand_total_child_new = $child_cost;
+                                    if(empty($hotel_markup_percentage)) {
+                                        $grand_total_child_new += $grand_total_child;
+                                    }
+
+                                    // Use total_child_persons for child calculations
+                                     // Fallback to total_persons if not provided
+                                    $per_person_child_cost = ($total_child_persons > 0 && $roe > 0)
+                                        ? round($grand_total_child_new / $roe)
+                                        : 0;
+
+                                    $cost_html .= '<td style="background-color: #d6d8d9; color: black;">' . '$' . $per_person_child_cost . '</td>';
+                                } else {
+                                    // Show dash for hotels without CNB data
+                                    $cost_html .= '<td style="background-color: #d6d8d9; color: black;">-</td>';
+                                }
+                            }
+                        }
+                        $cost_html .= '</tr>';
+                    }
+                    $has_child_data_cwb= false;
+                    foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotelId => $hotelName) {
+                            // Check if the key exists (not using ?? 0) to distinguish between null and 0
+                            $child_costc_cwb_exists = isset($hotel_costing_category_wise_child_cwb[$rating_key][$hotelId]);
+                            if ($child_costc_cwb_exists) {
+                                $has_child_data_cwb = true;
+                                break 2;
+                            }
+                        }
+                    }
+                    if($has_child_data_cwb)
+                    {
+                        $cost_html .= '<tr><th style="background-color: #d6d8d9; color: black;">Cost CWB Per Child</th>';
+                        foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                            foreach ($hotels as $hotelId => $hotelName) {
+                                // Check if CWB cost exists for this hotel
+                                $child_cost_cwb_exists = isset($hotel_costing_category_wise_child_cwb[$rating_key][$hotelId]);
+                                
+                                if ($child_cost_cwb_exists) {
+                                    $child_cost_cwb = $hotel_costing_category_wise_child_cwb[$rating_key][$hotelId];
+                                    
+                                    $markup_percentage = floatval($this->input->post('markup_percentage'));
+                                    $hotel_markup_percentage = floatval($this->input->post('hotel_markup_percentage'));
+                                    
+                                    if(!empty($hotel_markup_percentage)) {
+                                        $child_cost_cwb += ($child_cost_cwb * ($hotel_markup_percentage / 100));
+                                    } else {
+                                        $child_cost_cwb += ($child_cost_cwb * ($markup_percentage / 100));
+                                    }
+
+                                     $total_child_persons = $total_child_persons ?? $total_persons;
+                                    if($nights == '') {
+                                        // Use child-specific variables for child calculations
+                                        $grand_total_child = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+                                        $grand_total_child += ($grand_total_child * ($markup_percentage / 100));
+                                        $grand_total_child = $grand_total_child / $total_child_persons;
+                                    } else {
+                                        $grand_total_child = $child_cost_cwb;
+                                    }
+                                    
+                                    $grand_total_child_new_cwb = $child_cost_cwb;
+                                    if(empty($hotel_markup_percentage)) {
+                                        $grand_total_child_new_cwb += $grand_total_child;
+                                    }
+
+                                    // Fallback to total_persons if not provided
+                                    $per_person_child_cost_cwb = ($total_child_persons > 0 && $roe > 0)
+                                        ? round($grand_total_child_new_cwb / $roe)
+                                        : 0;
+
+                                    $cost_html .= '<td style="background-color: #d6d8d9; color: black;">' . '$' . $per_person_child_cost_cwb . '</td>';
+                                } else {
+                                    // Show dash for hotels without CWB data
+                                    $cost_html .= '<td style="background-color: #d6d8d9; color: black;">-</td>';
+                                }
+                            }
+                        }
+                        $cost_html .= '</tr>';
+                    }
+                    if(!empty($hotel_markup_percentage))
+                    {
+                        $total_cols = 0;
+                        foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                            foreach ($hotels as $hotelData) {
+                                if (isset($hotelData['nights']) && $hotelData['nights'] > 0) {
+                                    $total_cols++;
+                                }
+                            }
+                        }
+                        $grand_total_other = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price;
+                        $markup_percentage = floatval($this->input->post('markup_percentage'));
+                        $grand_total_other += ($grand_total_other * ($markup_percentage / 100));
+                        $converted_other = ($roe > 0) 
+                            ? round(($grand_total_other / $total_persons) / $roe) 
+                            : 0;
+                        $cost_html .= '<tr>
+                            <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Person</th>
+                            <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other.'</td>
+                        </tr>';
+
+                        $grand_total_child_other = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+                        $markup_percentage = floatval($this->input->post('markup_percentage'));
+                        $grand_total_child_other += ($grand_total_child_other * ($markup_percentage / 100));
+                        $converted_other_child = ($roe > 0) 
+                            ? round(($grand_total_child_other / $total_child_persons) / $roe) 
+                            : 0;
+                        $cost_html .= '<tr>
+                            <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Child</th>
+                        <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other_child.'</td>
+                    </tr>';
+
+                }
+                $cost_html .= '</table>';
+                }   
+
+                if ($has_any_night) {
+                    $markup_percentage = floatval($this->input->post('markup_percentage'));
+                    $packages = [];
+                    $package_index = 1;
+
+                    $all_available_nights = [];
+                    foreach ($hotel_names_category_wise as $rating => $hotels) {
+                        foreach ($hotels as $hotel_data) {
+                            if (isset($hotel_data['nights']) && !empty($hotel_data['nights']) && is_array($hotel_data['nights'])) {
+                                $all_available_nights = array_merge($all_available_nights, $hotel_data['nights']);
+                            }
+                        }
+                    }
+                    $all_available_nights = array_unique($all_available_nights);
+                    sort($all_available_nights);
+                    
+                    $final_nights_order = [];
+                    if (in_array(0, $all_available_nights)) {
+                        $final_nights_order[] = 0; 
+                    }
+                    
+                    foreach ($all_available_nights as $night) {
+                        if ($night != 0) {
+                            $final_nights_order[] = $night;
+                        }
+                    }
+                    
+                    $all_available_nights = $final_nights_order;
+
+                    $main_hotels = [];
+                    foreach ($hotel_names_category_wise as $rating => $hotels) {
+                        foreach ($hotels as $hotel_id => $hotel_data) {
+                            if (!isset($hotel_data['nights']) || empty($hotel_data['nights'])) {
+                                $hotel_data['nights'] = $all_available_nights;
+                            }
+                            
+                            $available_nights_count = count($hotel_data['nights']);
+                            if ($available_nights_count >= 2) {
+                                $main_hotels[] = [
+                                    'hotel_id' => $hotel_id,
+                                    'hotel_data' => $hotel_data,
+                                    'rating' => $rating
+                                ];
+                            }
+                        }
+                    }
+
+                    $package_signatures = [];
+                    $used_fallback_hotels = []; 
+
+                    foreach ($main_hotels as $main_hotel_info) {
+                        $hotel_id = $main_hotel_info['hotel_id'];
+                        $hotel_data = $main_hotel_info['hotel_data'];
+                        $rating = $main_hotel_info['rating'];
+
+                        $total_hotel_cost = floatval($hotel_costing_category_wise[$rating][$hotel_id] ?? 0);
+                        $total_child_cost_cnb = floatval($hotel_costing_category_wise_child[$rating][$hotel_id] ?? 0);
+                        $total_child_cost_cwb = floatval($hotel_costing_category_wise_child_cwb[$rating][$hotel_id] ?? 0);
+                        
+                        $nights_array = isset($hotel_data['nights']) ? $hotel_data['nights'] : $all_available_nights;
+                        $nights_count = count($nights_array);
+                        $per_night_cost = $total_hotel_cost / max($nights_count, 1);
+                        $per_night_child_cost_cnb = $total_child_cost_cnb / max($nights_count, 1);
+                        $per_night_child_cost_cwb = $total_child_cost_cwb / max($nights_count, 1);
+
+                        $package_hotels = [];
+                        $package_child_hotels_cnb = [];
+                        $package_child_hotels_cwb = [];
+                        $total_package_cost = 0;
+                        $total_package_child_cost_cnb = 0;
+                        $total_package_child_cost_cwb = 0;
+                        $fallback_hotels_used = [];
+                        $fallback_child_hotels_used_cnb = [];
+                        $fallback_child_hotels_used_cwb = [];
+                        $hotel_markup_percentage = floatval($this->input->post('hotel_markup_percentage'));
+                        
+                        foreach ($all_available_nights as $night_no) {
+                            if (in_array($night_no, $nights_array)) 
+                            {
+                                // Adult cost calculation
+                                $per_person = ($total_persons > 0 && $roe > 0)
+                                    ? ($per_night_cost / $total_persons) / $roe
+                                    : 0;
+                                
+                                if(!empty($hotel_markup_percentage)) {
+                                    $per_person += ($per_person * ($hotel_markup_percentage / 100));
+                                } else {
+                                    $per_person += ($per_person * ($markup_percentage / 100));
+                                }
+
+                                $package_hotels[] = [
+                                    'name' => $hotel_data['hotel_name'],
+                                    'rating' => $rating,
+                                    'night' => $night_no,
+                                    'cost_per_person' => round($per_person),
+                                    'type' => 'same_hotel'
+                                ];
+                                
+                                $total_package_cost += $per_person;
+
+                                // Child CNB cost calculation
+                                // Child CNB cost calculation - only if cost exists
+                                $per_person_child_cnb = '';
+                                if (isset($hotel_costing_category_wise_child[$rating][$hotel_id])) {
+                                    $total_child_cost_cnb = floatval($hotel_costing_category_wise_child[$rating][$hotel_id] ?? 0);
+                                    $total_child_persons = $total_child_persons ?? $total_persons;
+                                    $per_person_child_cnb = ($total_child_persons > 0 && $roe > 0)
+                                        ? ($per_night_child_cost_cnb  / $roe )
+                                        : 0;
+                                    
+                                    if(!empty($hotel_markup_percentage)) {
+                                        $per_person_child_cnb += ($per_person_child_cnb * ($hotel_markup_percentage / 100));
+                                    } else {
+                                        $per_person_child_cnb += ($per_person_child_cnb * ($markup_percentage / 100));
+                                    }
+                                    $per_person_child_cnb = round($per_person_child_cnb);
+                                }
+
+                                $package_child_hotels_cnb[] = [
+                                    'name' => $hotel_data['hotel_name'],
+                                    'rating' => $rating,
+                                    'night' => $night_no,
+                                    'cost_per_person' => $per_person_child_cnb,
+                                    'type' => 'same_hotel'
+                                ];
+
+                                // Only add to total if cost exists
+                                if ($total_child_cost_cnb > 0 && is_numeric($per_person_child_cnb)) {
+                                    $total_package_child_cost_cnb += $per_person_child_cnb;
+                                }
+
+                                // Child CWB cost calculation
+                                // Child CWB cost calculation - only if cost exists
+                                $per_person_child_cwb = '';
+                                if (isset($hotel_costing_category_wise_child_cwb[$rating][$hotel_id])) {
+                                    $total_child_cost_cwb = floatval($hotel_costing_category_wise_child_cwb[$rating][$hotel_id] ?? 0);
+                                    $per_person_child_cwb = ($total_child_persons > 0 && $roe > 0)
+                                        ? ($per_night_child_cost_cwb / $roe )
+                                        : 0;
+                                    
+                                    if(!empty($hotel_markup_percentage)) {
+                                        $per_person_child_cwb += ($per_person_child_cwb * ($hotel_markup_percentage / 100));
+                                    } else {
+                                        $per_person_child_cwb += ($per_person_child_cwb * ($markup_percentage / 100));
+                                    }
+                                    $per_person_child_cwb = round($per_person_child_cwb);
+                                }
+
+                                $package_child_hotels_cwb[] = [
+                                    'name' => $hotel_data['hotel_name'],
+                                    'rating' => $rating,
+                                    'night' => $night_no,
+                                    'cost_per_person' => $per_person_child_cwb,
+                                    'type' => 'same_hotel'
+                                ];
+
+                                // Only add to total if cost exists
+                                if (isset($hotel_costing_category_wise_child_cwb[$rating][$hotel_id]) && is_numeric($per_person_child_cwb)) {
+                                    $total_package_child_cost_cwb += $per_person_child_cwb;
+                                }
+                                
+                            } else {
+                                $fallback_hotel = $this->findFallbackHotel($hotel_names_category_wise, $hotel_costing_category_wise, $night_no, $rating, $hotel_data['hotel_name'], $total_persons, $roe, $markup_percentage, $used_fallback_hotels, $hotel_markup_percentage);
+                                
+                                // For child CNB fallback
+                                $total_child_persons = $total_child_persons ?? $total_persons;
+                                $fallback_child_hotel_cnb = $this->findFallbackHotel($hotel_names_category_wise, $hotel_costing_category_wise_child, $night_no, $rating, $hotel_data['hotel_name'], $total_child_persons, $roe, $markup_percentage, $used_fallback_hotels, $hotel_markup_percentage);
+                                
+                                // For child CWB fallback
+                                $fallback_child_hotel_cwb = $this->findFallbackHotel($hotel_names_category_wise, $hotel_costing_category_wise_child_cwb, $night_no, $rating, $hotel_data['hotel_name'], $total_child_persons, $roe, $markup_percentage, $used_fallback_hotels, $hotel_markup_percentage);
+                                
+                                $package_hotels[] = $fallback_hotel;
+                                $package_child_hotels_cnb[] = $fallback_child_hotel_cnb;
+                                $package_child_hotels_cwb[] = $fallback_child_hotel_cwb;
+                                
+                                $total_package_cost += $fallback_hotel['cost_per_person'];
+                                // $total_package_child_cost_cnb += $fallback_child_hotel_cnb['cost_per_person'];
+                                if (is_numeric($fallback_child_hotel_cnb['cost_per_person'])) {
+                                    $total_package_child_cost_cnb += $fallback_child_hotel_cnb['cost_per_person'];
+                                }
+                                if (is_numeric($fallback_child_hotel_cwb['cost_per_person'])) {
+                                    $total_package_child_cost_cwb += $fallback_child_hotel_cwb['cost_per_person'];
+                                }
+                                // $total_package_child_cost_cwb += $fallback_child_hotel_cwb['cost_per_person'];
+                                
+                                if ($fallback_hotel['type'] != 'same_hotel') {
+                                    $fallback_hotels_used[] = $fallback_hotel['name'];
+                                }
+                                if ($fallback_child_hotel_cnb['type'] != 'same_hotel') {
+                                    $fallback_child_hotels_used_cnb[] = $fallback_child_hotel_cnb['name'];
+                                }
+                                if ($fallback_child_hotel_cwb['type'] != 'same_hotel') {
+                                    $fallback_child_hotels_used_cwb[] = $fallback_child_hotel_cwb['name'];
+                                }
+                            }
+                        }
+
+                        $grand_total_other = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price;
+                        $grand_total_other += $grand_total_other * ($markup_percentage / 100);
+                        $converted_other = ($roe > 0)
+                            ? round(($grand_total_other / $total_persons) / $roe, 2)
+                            : 0;
+
+                        // For child land package cost
+                        $grand_total_other_child = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+                        $grand_total_other_child += $grand_total_other_child * ($markup_percentage / 100);
+                        $total_child_persons = $total_child_persons ?? $total_persons;
+                        $converted_other_child = ($roe > 0)
+                            ? round(($grand_total_other_child / $total_child_persons) / $roe, 2)
+                            : 0;
+
+                        if(empty($hotel_markup_percentage)) {
+                            $total_package_cost += $converted_other;
+                            $total_package_child_cost_cnb += $converted_other_child;
+                            $total_package_child_cost_cwb += $converted_other_child;
+                        }
+
+                        $fallback_signature = implode('|', array_unique($fallback_hotels_used));
+                        $package_signature = $hotel_data['hotel_name'] . "|" . $fallback_signature;
+
+                        if (!in_array($package_signature, $package_signatures)) {
+                            $package_signatures[] = $package_signature;
+                            
+                            $packages[] = [
+                                'name' => 'Package ' . $package_index++,
+                                'primary_rating' => $rating,
+                                'main_hotel' => $hotel_data['hotel_name'],
+                                'fallback_hotels' => array_unique($fallback_hotels_used),
+                                'hotels' => $package_hotels,
+                                'child_hotels_cnb' => $package_child_hotels_cnb,
+                                'child_hotels_cwb' => $package_child_hotels_cwb,
+                                'total_cost' => round($total_package_cost),
+                                'total_child_cost_cnb' => ($total_package_child_cost_cnb > 0 && is_numeric($total_package_child_cost_cnb)) ? round($total_package_child_cost_cnb) : '',
+                                'total_child_cost_cwb' => ($total_package_child_cost_cwb > 0 && is_numeric($total_package_child_cost_cwb)) ? round($total_package_child_cost_cwb) : ''
+                            ];
+                        }
+                    }
+                    
+                    // ЁЯФ╣ Merge same hotel nights within each package for adults
+                    foreach ($packages as &$pkg) {
+                        $merged_hotels = [];
+                        foreach ($pkg['hotels'] as $hotel) {
+                            $key = $hotel['name'] . '_' . $hotel['rating'];
+                            if (!isset($merged_hotels[$key])) {
+                                $merged_hotels[$key] = [
+                                    'name' => $hotel['name'],
+                                    'rating' => $hotel['rating'],
+                                    'nights' => [],
+                                    'cost_per_person' => $hotel['cost_per_person'],
+                                    'type' => $hotel['type']
+                                ];
+                            }
+                            $merged_hotels[$key]['nights'][] = $hotel['night'];
+                        }
+
+                        foreach ($merged_hotels as &$h) {
+                            sort($h['nights']);
+                            $unique_nights = array_unique($h['nights']);
+                            $formatted_nights = array_map(fn($n) => ($n == 0 ? 'Early Check-in' : $n . 'N'), $unique_nights);
+
+                            $total_nights = count(array_filter($unique_nights, fn($n) => $n > 0));
+                            if (in_array(0, $unique_nights)) {
+                                $total_nights += 1; // count early check-in as 1N
+                            }
+
+                            $h['night'] = $total_nights ;
+                        }
+
+                        $pkg['hotels'] = array_values($merged_hotels);
+                    }
+                    
+                    // ЁЯФ╣ Merge same hotel nights within each package for children CNB
+                    foreach ($packages as &$pkg) {
+                        $merged_child_hotels_cnb = [];
+                        foreach ($pkg['child_hotels_cnb'] as $hotel) {
+                            $key = $hotel['name'] . '_' . $hotel['rating'];
+                            if (!isset($merged_child_hotels_cnb[$key])) {
+                                $merged_child_hotels_cnb[$key] = [
+                                    'name' => $hotel['name'],
+                                    'rating' => $hotel['rating'],
+                                    'nights' => [],
+                                    'cost_per_person' => $hotel['cost_per_person'],
+                                    'type' => $hotel['type']
+                                ];
+                            }
+                            $merged_child_hotels_cnb[$key]['nights'][] = $hotel['night'];
+                        }
+
+                        foreach ($merged_child_hotels_cnb as &$h) {
+                            sort($h['nights']);
+                            $unique_nights = array_unique($h['nights']);
+                            $total_nights = count(array_filter($unique_nights, fn($n) => $n > 0));
+                            if (in_array(0, $unique_nights)) {
+                                $total_nights += 1;
+                            }
+                            $h['night'] = $total_nights;
+                        }
+
+                        $pkg['child_hotels_cnb'] = array_values($merged_child_hotels_cnb);
+                    }
+
+                    // ЁЯФ╣ Merge same hotel nights within each package for children CWB
+                    foreach ($packages as &$pkg) {
+                        $merged_child_hotels_cwb = [];
+                        foreach ($pkg['child_hotels_cwb'] as $hotel) {
+                            $key = $hotel['name'] . '_' . $hotel['rating'];
+                            if (!isset($merged_child_hotels_cwb[$key])) {
+                                $merged_child_hotels_cwb[$key] = [
+                                    'name' => $hotel['name'],
+                                    'rating' => $hotel['rating'],
+                                    'nights' => [],
+                                    'cost_per_person' => $hotel['cost_per_person'],
+                                    'type' => $hotel['type']
+                                ];
+                            }
+                            $merged_child_hotels_cwb[$key]['nights'][] = $hotel['night'];
+                        }
+
+                        foreach ($merged_child_hotels_cwb as &$h) {
+                            sort($h['nights']);
+                            $unique_nights = array_unique($h['nights']);
+                            $total_nights = count(array_filter($unique_nights, fn($n) => $n > 0));
+                            if (in_array(0, $unique_nights)) {
+                                $total_nights += 1;
+                            }
+                            $h['night'] = $total_nights;
+                        }
+
+                        $pkg['child_hotels_cwb'] = array_values($merged_child_hotels_cwb);
+                    }
+                    unset($pkg);
+                    
+                    if (!empty($packages)) {
+                        $cost_html .= '<table border="1" cellpadding="6" cellspacing="0" style="width:100%; border-collapse:collapse; text-align:left;">';
+                        $cost_html .= '<tr style="background-color: #d6d8d9; font-weight:bold;">
+                            <th>Package</th>
+                            <th>Hotel</th>
+                            <th>Rating</th>
+                            <th>No. of Nights</th>';
+                            if (!empty($hotel_markup_percentage)) {
+                                    $cost_html .= '<th>Cost Per Person / Night</th>';
+                                    $cost_html .= '<th>Cost CNB Per Child / Night</th>';
+                                    $cost_html .= '<th>Cost CWB Per Child / Night</th>';
+                                } else {
+                                    $cost_html .= '<th>Cost Per Person</th>';
+                                    $cost_html .= '<th>Cost CNB Per Child</th>';
+                                    $cost_html .= '<th>Cost CWB Per Child</th>';
+                                }
+                        $cost_html .='</tr>';
+                        
+                        foreach ($packages as $pkg) {
+                            $rowspan = count($pkg['hotels']);
+                            $first_row = true;
+
+                            // Display Adult and Child costs in the same row
+                            foreach ($pkg['hotels'] as $index => $hotel) {
+                                $cost_html .= '<tr>';
+                                if ($first_row) {
+                                    $cost_html .= '<td rowspan="' . $rowspan . '" style="font-weight:bold;background-color: #d6d8d9;">' . $pkg['name'] . '</td>';
+                                    $first_row = false;
+                                }
+                                
+                                $hotel_bg_color = ($hotel['type'] == 'same_hotel') ? '#d6d8d9' : '#d6d8d9';
+                                $cost_html .= '<td style="font-weight:bold;color:#6060a9;background-color: ' . $hotel_bg_color . ';">' . $hotel['name'] . '</td>';
+                                $cost_html .= '<td style="background-color: ' . $hotel_bg_color . ';">' . str_replace('_', ' ', $hotel['rating']) . '</td>';
+                                $cost_html .= '<td style="background-color: ' . $hotel_bg_color . ';">' . $hotel['night'] . '</td>';
+                                
+                                // Adult cost column
+                                if(!empty($hotel_markup_percentage)) {
+                                    $cost_html .= '<td style="background-color: ' . $hotel_bg_color . ';">$' . $hotel['cost_per_person'] . '</td>';
+                                } else {
+                                    if ($index === 0) {
+                                        $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold;">$' . number_format($pkg['total_cost']) . '</td>';
+                                    } else {
+                                        // $cost_html .= '<td style="background-color: ' . $hotel_bg_color . ';"></td>';
+                                    }
+                                }
+                                
+                                // Child CNB cost column
+                                $child_hotel_cnb = $pkg['child_hotels_cnb'][$index] ?? null;
+                                $has_child_costs_cnb = $child_hotel_cnb && $pkg['total_child_cost_cnb'] !== '';
+
+                                if($has_child_costs_cnb) {
+                                    if(!empty($hotel_markup_percentage)) {
+                                        if ($child_hotel_cnb['cost_per_person'] === '') {
+                                            $cost_html .= '<td style="background-color: #d6d8d9; color: black;"></td>';
+                                        } else {
+                                            $cost_html .= '<td style="background-color: #d6d8d9; color: black;">$' . $child_hotel_cnb['cost_per_person'] . '</td>';
+                                        }
+                                    } else {
+                                        if ($index === 0) {
+                                            // Check only current hotel's CNB cost
+                                            if (isset($child_hotel_cnb['cost_per_person']) && is_numeric($child_hotel_cnb['cost_per_person'])) {
+                                                $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;">$' . number_format($pkg['total_child_cost_cnb']) . '</td>';
+                                            } else {
+                                                $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;"></td>';
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // No child CNB costs available
+                                    if(!empty($hotel_markup_percentage)) {
+                                        $cost_html .= '<td style="background-color: #d6d8d9; color: black;">-</td>';
+                                    } else {
+                                        if ($index === 0) {
+                                            $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;">-</td>';
+                                        } else {
+                                            $cost_html .= '<td style="background-color: #d6d8d9; color: black;"></td>';
+                                        }
+                                    }
+                                }
+
+                                // Child CWB cost column
+                            // Child CWB cost column
+                                $child_hotel_cwb = $pkg['child_hotels_cwb'][$index] ?? null;
+                                $has_child_costs_cwb = !empty($pkg['total_child_cost_cwb']) && $child_hotel_cwb;
+
+                                if($has_child_costs_cwb) {
+                                    if(!empty($hotel_markup_percentage)) {
+                                        if ($child_hotel_cwb['cost_per_person'] === '') {
+                                            $cost_html .= '<td style="background-color: #d6d8d9; color: black;"></td>';
+                                        } else {
+                                            $cost_html .= '<td style="background-color: #d6d8d9; color: black;">$' . $child_hotel_cwb['cost_per_person'] . '</td>';
+                                        }
+                                    } else {
+                                        if ($index === 0) {
+                                            if (isset($child_hotel_cwb['cost_per_person']) && is_numeric($child_hotel_cwb['cost_per_person'])) {
+                                                $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;">$' . number_format($pkg['total_child_cost_cwb']) . '</td>';
+                                            } else {
+                                                $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;"></td>';
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // No child CWB costs available
+                                    if(!empty($hotel_markup_percentage)) {
+                                        $cost_html .= '<td style="background-color: #d6d8d9; color: black;">-</td>';
+                                    } else {
+                                        if ($index === 0) {
+                                            $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;">-</td>';
+                                        } else {
+                                            $cost_html .= '<td style="background-color: #d6d8d9; color: black;"></td>';
+                                        }
+                                    }
+                                }
+                                
+                                $cost_html .= '</tr>';
+                            }
+                        }
+
+                        if(!empty($hotel_markup_percentage)) {
+                            $total_cols = 0;
+                            foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                                foreach ($hotels as $hotelData) {
+                                    if (isset($hotelData['nights']) && $hotelData['nights'] > 0) {
+                                        $total_cols++;
+                                    }
+                                }
+                            }
+                            $grand_total_other = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price;
+                            $markup_percentage = floatval($this->input->post('markup_percentage'));
+                            $grand_total_other += ($grand_total_other * ($markup_percentage / 100));
+                            $converted_other = ($roe > 0) 
+                                ? round(($grand_total_other / $total_persons) / $roe) 
+                                : 0;
+                            $cost_html .= '<tr>
+                                <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Person</th>
+                                <td colspan="6" style="background-color:#d6d8d9;color:red;"> $'.$converted_other.'</td>
+                            </tr>';
+
+                            $grand_total_other_child = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+                            $markup_percentage = floatval($this->input->post('markup_percentage'));
+                            $grand_total_other_child += ($grand_total_other_child * ($markup_percentage / 100));
+                            $converted_other = ($roe > 0) 
+                                ? round(($grand_total_other_child / $total_child_persons) / $roe) 
+                                : 0;
+                            $cost_html .= '<tr>
+                                <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Child</th>
+                                <td colspan="6" style="background-color:#d6d8d9;color:red;"> $'.$converted_other.'</td>
+                            </tr>';
+                        }
+
+                        $cost_html .= '</table>';
+                    }
+                }
+            }
+              else if ($this->input->post('hdn_group_type') == 'individual') 
+            {
+                $hotel_markup_percentage = floatval($this->input->post('hotel_markup_percentage'));
+                $markup_percentage = floatval($this->input->post('markup_percentage'));
+
+               $grand_total = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price;
+                $grand_total_pp = $grand_total / $total_persons;
+                $grand_total_pp += ($grand_total_pp * ($markup_percentage / 100));
+
+                if($total_child_persons > 0){
+                    $grand_total_child = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+                    $grand_total_child_pp = $grand_total_child / $total_child_persons;
+                    $grand_total_child_pp += ($grand_total_child_pp * ($markup_percentage / 100));
+                }
+
+                $cost_html = '';
+                $has_valid_nights = false;
+                foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                    foreach ($hotels as $hotel_name => $categories) {
+                        if (!empty($categories['nights'])) {
+                            $filtered_nights = array_filter($categories['nights'], fn($v) => $v != 0);
+                            if (count($filtered_nights) > 0) {
+                                $has_valid_nights = true;
+                                break 2; // exit both loops
+                            }
+                        }
+                    }
+                }
+                
+                if (!$has_valid_nights) {
+                    $cost_html .= '<table class="rating-table" border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width:100%; text-align: left;">';
+                    $cost_html .= '<tr><th style="background-color: #d6d8d9;">Rating</th>';
+                    
+                    // Calculate colspan for each rating (EXCLUDE CNB/CWB)
+                    foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                        $colspan = 0;
+                        foreach ($hotels as $hotel_name => $categories) {
+                            foreach ($categories as $cat => $occupancies) {
+                                if (is_array($occupancies)) {
+                                    // EXCLUDE CNB and CWB from column count
+                                    $occupancy_type = '';
+                                    foreach ($occupancies as $occ) {
+                                        $occ_arr = explode('__', $occ);
+                                        $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                        // Skip CNB and CWB occupancies
+                                        if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                            $colspan++;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        $rating_display = ucwords(str_replace('_', ' ', $rating_key));
+                        $cost_html .= '<th colspan="' . $colspan . '" style="background-color: #d6d8d9;">' . $rating_display . '</th>';
+                    }
+                    $cost_html .= '</tr>';
+                    
+                    // Hotel row
+                    $cost_html .= '<tr><th style="background-color: #d6d8d9;">Hotel</th>';
+                    foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotel_name => $categories) { 
+                            $occ_count = 0;
+                            foreach ($categories as $cat => $occupancies) {
+                                if ($cat === "nights") continue;
+                                if (is_array($occupancies)) {
+                                    // Count only non-CNB/CWB occupancies
+                                    foreach ($occupancies as $occ) {
+                                        $occ_arr = explode('__', $occ);
+                                        $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                        if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                            $occ_count++;
+                                        }
+                                    }
+                                }
+                            }
+
+                            $nights = isset($categories['nights']) ? $categories['nights'] : 0;
+                        
+                            if (is_array($nights)) {
+                                $filtered_nights = array_filter($nights, function($v) {
+                                    return $v != 0; // remove any 0 entries
+                                });
+                                $night_count = count($filtered_nights);
+                            } else {
+                                $night_count = (int)$nights;
+                            }
+                            $hotel_display = $hotel_name . ($nights ? " ({$night_count}N)" : "");
+                            $cost_html .= '<td colspan="' . $occ_count . '" style="background-color: #d6d8d9; font-weight:bold;color:#6060a9;">' . $hotel_display . '</td>';
+                        }
+                    }
+                    $cost_html .= '</tr>';
+                    
+                   
+                    $cost_html .= '<tr><th style="background-color: #d6d8d9;">Room Category</th>';
+                    foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotel_name => $categories) {
+                            $roomCats = [];
+                            $categoryIds = [];
+                            
+                            // First, collect all non-CNB/CWB occupancies and their categories
+                            foreach ($categories as $cat => $occupancies) {
+                                if (!is_array($occupancies)) continue;
+                                $hotel_id = $categories['hotel_id'] ?? 0;
+                                foreach ($occupancies as $occ) {
+                                    $occ_arr = explode('__', $occ);
+                                    $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                    $category_id = isset($occ_arr[2]) ? $occ_arr[2] : $this->get_category_id_by_name_new($cat, $hotel_id);
+                                    
+                                    // Only include non-CNB/CWB occupancies
+                                    if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                        $roomCats[] = [
+                                            'category' => $cat,
+                                            'id' => $category_id
+                                        ];
+                                    }
+                                }
+                            }
+        
+                            // Group consecutive same categories for colspan
+                            $groupedCats = [];
+                            $prevCat = null;
+                            $currentGroup = [];
+                            
+                            foreach ($roomCats as $roomCat) {
+                                if ($prevCat === null) {
+                                    // First category
+                                    $currentGroup[] = $roomCat;
+                                } elseif ($roomCat['category'] === $prevCat['category']) {
+                                    // Same category, add to current group
+                                    $currentGroup[] = $roomCat;
+                                } else {
+                                    // Different category, save current group and start new one
+                                    $groupedCats[] = $currentGroup;
+                                    $currentGroup = [$roomCat];
+                                }
+                                $prevCat = $roomCat;
+                            }
+                            
+                            // Don't forget the last group
+                            if (!empty($currentGroup)) {
+                                $groupedCats[] = $currentGroup;
+                            }
+        
+                            // Now display the grouped categories
+                            foreach ($groupedCats as $group) {
+                                $colspan = count($group);
+                                $firstCat = $group[0];
+                                
+                                $cost_html .= '<td colspan="' . $colspan . '" style="background-color: #d6d8d9;">';
+                                // $cost_html .= '<a href="'.base_url('room-category-page/'.base64_encode($firstCat['id'])).'" target="_blank" style="color: #131313ff; text-decoration: none;" title="Click to view category details">';
+                                $cost_html .= $firstCat['category'];
+                                // $cost_html .= '</a>';
+                                $cost_html .= '</td>';
+                            }
+                        }
+                    }
+                    $cost_html .= '</tr>';
+                    
+                    // Room Occupancy row - REMOVE CNB and CWB
+                    $cost_html .= '<tr><th style="background-color: #d6d8d9;">Room Occupancy</th>';
+                    foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotel_name => $categories) {
+                            foreach ($categories as $cat => $occupancies) {
+                                if (!is_array($occupancies)) continue;
+                                foreach ($occupancies as $occ) {
+                                    $occ_arr = explode('__', $occ);
+                                    $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                    $occupancy_type = str_ireplace("Occupancy", "", $occupancy_type);
+                                    $occupancy_type = trim($occupancy_type);
+                                    
+                                    // Skip CNB and CWB occupancies
+                                    if (strpos($occupancy_type, 'CNB') !== false || strpos($occupancy_type, 'CWB') !== false) {
+                                        continue;
+                                    }
+                                    
+                                    if($occupancy_type == 'Double'){
+                                        $occupancy_type = 'Double/Twin';
+                                        $cost_html .= '<td style="background-color: #d6d8d9;"><b>' . $occupancy_type . '</b></td>';
+                                    } else {
+                                        $cost_html .= '<td style="background-color: #d6d8d9;"><b>' . $occupancy_type . '</b></td>';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    $cost_html .= '</tr>';
+                    
+                    // Hotel Cost Per Person row - REMOVE CNB and CWB costs
+                    $label = ($has_valid_nights) ? "Hotel Cost Per Person" : "Cost Per Person";
+                    $cost_html .= '<tr><th style="background-color: #d6d8d9;">'. $label .'</th>';
+                    foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotel_name => $categories) {
+                            foreach ($categories as $cat => $occupancies) {
+                                if (!is_array($occupancies)) continue;  
+                                foreach ($occupancies as $occ) {
+                                    $occ_arr = explode('__', $occ);
+                                    $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                    
+                                    // Skip CNB and CWB costs
+                                    if (strpos($occupancy_type, 'CNB') !== false || strpos($occupancy_type, 'CWB') !== false) {
+                                        continue;
+                                    }
+                                    
+                                    $occupancy_cost = isset($occ_arr[1]) ? floatval($occ_arr[1]) : 0;
+
+                                    if(!empty($hotel_markup_percentage)) {
+                                        $occupancy_cost += ($occupancy_cost * ($hotel_markup_percentage / 100));
+                                    } else {
+                                        $occupancy_cost += ($occupancy_cost * ($markup_percentage / 100));
+                                    }
+
+                                    if ($has_valid_nights) {
+                                        $cost_with_total = $occupancy_cost;
+                                    } else {
+                                        $cost_with_total = $occupancy_cost;
+                                        if (empty($hotel_markup_percentage)) {
+                                            $cost_with_total += $grand_total_pp;
+                                        }
+                                    }
+                                    $converted = ($roe > 0) ? round($cost_with_total / $roe) : 0;
+
+                                    $cost_html .= '<td style="background-color: #d6d8d9;">$' . $converted . '</td>';
+                                }
+                            }
+                        }
+                    }
+                    $cost_html .= '</tr>';
+                    
+                    // Check if we have any CNB/CWB occupancies across all hotels (regardless of cost)
+                    $has_cnb_occupancies = false;
+                    $has_cwb_occupancies = false;
+                    
+                    foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotel_name => $categories) {
+                            foreach ($categories as $cat => $occupancies) {
+                                if (!is_array($occupancies)) continue;
+                                foreach ($occupancies as $occ) {
+                                    $occ_arr = explode('__', $occ);
+                                    $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                    
+                                    if (strpos($occupancy_type, 'CNB') !== false) {
+                                        $has_cnb_occupancies = true;
+                                    }
+                                    if (strpos($occupancy_type, 'CWB') !== false) {
+                                        $has_cwb_occupancies = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // NEW: CNB Cost Per Person row - show for each hotel (only if we have CNB occupancies)
+                    if($total_child_persons > 0 && $has_cnb_occupancies){
+                        $cost_html .= '<tr><th style="background-color: #d6d8d9; color: black;">Cost CNB Per Child</th>';
+                        foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                            foreach ($hotels as $hotel_name => $categories) {
+                                $cnb_costs = [];
+                                $occupancy_count = 0;
+                                
+                                // Count only ADULT occupancies for proper colspan alignment
+                                foreach ($categories as $cat => $occupancies) {
+                                    if (!is_array($occupancies)) continue;
+                                    foreach ($occupancies as $occ) {
+                                        $occ_arr = explode('__', $occ);
+                                        $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                        if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                            $occupancy_count++;
+                                        }
+                                    }
+                                }
+                                
+                                // Find CNB costs (include even if cost is 0)
+                                foreach ($categories as $cat => $occupancies) {
+                                    if (!is_array($occupancies)) continue;
+                                    foreach ($occupancies as $occ) {
+                                        $occ_arr = explode('__', $occ);
+                                        $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                        
+                                        // Check if this is a CNB occupancy
+                                        if (strpos($occupancy_type, 'CNB') !== false) {
+                                            $occupancy_cost = isset($occ_arr[1]) ? floatval($occ_arr[1]) : 0;
+                                            
+                                            // Include even if cost is 0
+                                            if(!empty($hotel_markup_percentage)) {
+                                                $occupancy_cost += ($occupancy_cost * ($hotel_markup_percentage / 100));
+                                            } else {
+                                                $occupancy_cost += ($occupancy_cost * ($markup_percentage / 100));
+                                            }
+
+                                            if ($has_valid_nights) {
+                                                $cost_with_total = $occupancy_cost;
+                                            } else {
+                                                $cost_with_total = $occupancy_cost;
+                                                if (empty($hotel_markup_percentage)) {
+                                                    $cost_with_total += $grand_total_child_pp;
+                                                }
+                                            }
+                                            
+                                            $converted = ($roe > 0) ? round($cost_with_total / $roe) : 0;
+                                            $cnb_costs[] = $converted;
+                                        }
+                                    }
+                                }
+                                
+                                // Display CNB cost for this hotel
+                                if (!empty($cnb_costs)) {
+                                    $cnb_cost = min($cnb_costs); // Show minimum CNB cost
+                                    $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black;">$' . $cnb_cost . '</td>';
+                                } else {
+                                    $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black;">-</td>';
+                                }
+                            }
+                        }
+                        $cost_html .= '</tr>';
+                    }
+                    
+                    // NEW: CWB Cost Per Person row - show for each hotel (only if we have CWB occupancies)
+                    if($total_child_persons > 0 && $has_cwb_occupancies){
+                        $cost_html .= '<tr><th style="background-color: #d6d8d9; color: black;">Cost CWB Per Child</th>';
+                        foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                            foreach ($hotels as $hotel_name => $categories) {
+                                $cwb_costs = [];
+                                $occupancy_count = 0;
+                                
+                                // Count only ADULT occupancies for proper colspan alignment
+                                foreach ($categories as $cat => $occupancies) {
+                                    if (!is_array($occupancies)) continue;
+                                    foreach ($occupancies as $occ) {
+                                        $occ_arr = explode('__', $occ);
+                                        $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                        if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                            $occupancy_count++;
+                                        }
+                                    }
+                                }
+                                
+                                // Find CWB costs (include even if cost is 0)
+                                foreach ($categories as $cat => $occupancies) {
+                                    if (!is_array($occupancies)) continue;
+                                    foreach ($occupancies as $occ) {
+                                        $occ_arr = explode('__', $occ);
+                                        $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                        
+                                        // Check if this is a CWB occupancy
+                                        if (strpos($occupancy_type, 'CWB') !== false) {
+                                            $occupancy_cost = isset($occ_arr[1]) ? floatval($occ_arr[1]) : 0;
+                                            
+                                            // Include even if cost is 0
+                                            if(!empty($hotel_markup_percentage)) {
+                                                $occupancy_cost += ($occupancy_cost * ($hotel_markup_percentage / 100));
+                                            } else {
+                                                $occupancy_cost += ($occupancy_cost * ($markup_percentage / 100));
+                                            }
+
+                                            if ($has_valid_nights) {
+                                                $cost_with_total = $occupancy_cost;
+                                            } else {
+                                                $cost_with_total = $occupancy_cost;
+                                                if (empty($hotel_markup_percentage)) {
+                                                    $cost_with_total += $grand_total_child_pp;
+                                                }
+                                            }
+                                            
+                                            $converted = ($roe > 0) ? round($cost_with_total / $roe) : 0;
+                                            $cwb_costs[] = $converted;
+                                        }
+                                    }
+                                }
+                                
+                                // Display CWB cost for this hotel
+                                if (!empty($cwb_costs)) {
+                                    $cwb_cost = min($cwb_costs); // Show minimum CWB cost
+                                    $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black;">$' . $cwb_cost . '</td>';
+                                } else {
+                                    $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black;">-</td>';
+                                }
+                            }
+                        }
+                        $cost_html .= '</tr>';
+                    }
+                    
+                    // Land Package Cost Per Person 
+                    if(!empty($hotel_markup_percentage)){
+                        $total_cols = 0;
+                        foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                            foreach ($hotels as $hotel_name => $categories) {
+                                foreach ($categories as $cat => $occupancies) {
+                                    if (is_array($occupancies)) {
+                                        foreach ($occupancies as $occ) {
+                                            $occ_arr = explode('__', $occ);
+                                            $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                            if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                                $total_cols++;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        $converted_other = ($roe > 0) 
+                            ? round($grand_total_pp / $roe) 
+                            : 0;
+                        $cost_html .= '<tr>
+                            <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Person</th>
+                            <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other.'</td>
+                        </tr>';
+                        if($total_child_persons > 0){
+                        $converted_other_child = ($roe > 0) 
+                            ? round($grand_total_child_pp / $roe) 
+                            : 0;
+                        $cost_html .= '<tr>
+                            <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Child</th>
+                            <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other_child.'</td>
+                        </tr>';
+                        }
+                    }
+                    $cost_html .= '</table>';
+                }
+            
+             if ($has_valid_nights) {
+                $hotels_by_ratings = [];
+            
+                foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                    foreach ($hotels as $hotel_name => $categories) {
+                        $nights_array = $categories['nights'] ?? [];
+                        $filtered_nights = is_array($nights_array) ? $nights_array : [];
+            
+                        if (empty($filtered_nights)) continue;
+            
+                        // Filter only positive nights for package grouping (exclude 0 and -1)
+                        $package_nights = array_filter($filtered_nights, function($n) {
+                            return $n > 0; // Only positive numbers are actual nights
+                        });
+                        
+                        if (empty($package_nights)) continue;
+            
+                        foreach ($package_nights as $night_no) {
+                            $hotels_by_ratings[$rating_key][$night_no][] = [
+                                'name' => $hotel_name,
+                                'rating' => $rating_key,
+                                'night_no' => $night_no,
+                                'categories' => $categories,
+                                'has_early_checkin' => in_array(0, $filtered_nights),
+                                'has_late_checkout' => in_array(-1, $filtered_nights)
+                            ];
+                        }
+                    }
+                }
+            
+                $all_ratings = array_keys($hotels_by_ratings);
+                $all_nights = [];
+            
+                foreach ($hotels_by_ratings as $rating => $night_hotels) {
+                    $all_nights = array_unique(array_merge($all_nights, array_keys($night_hotels)));
+                }
+            
+                sort($all_nights);
+            
+                foreach ($all_ratings as $rating) {
+                    foreach ($all_nights as $night_no) {
+                        if (
+                            !isset($hotels_by_ratings[$rating][$night_no]) ||
+                            empty($hotels_by_ratings[$rating][$night_no])
+                        ) {
+                            foreach ($all_ratings as $alt_rating) {
+                                if ($alt_rating === $rating) continue;
+                                if (!empty($hotels_by_ratings[$alt_rating][$night_no])) {
+                                    $hotels_by_ratings[$rating][$night_no] = $hotels_by_ratings[$alt_rating][$night_no];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            
+                $packages = [];
+                $package_index = 1;
+            
+                foreach ($hotels_by_ratings as $rating => $night_groups) {
+                    $max_count = 0;
+                    foreach ($night_groups as $night_hotels) {
+                        $max_count = max($max_count, count($night_hotels));
+                    }
+            
+                    for ($i = 0; $i < $max_count; $i++) {
+                        $combo = [];
+            
+                        foreach ($all_nights as $night_no) {
+                            $night_hotels = $night_groups[$night_no];
+                            $hotel = $night_hotels[$i] ?? end($night_hotels);
+            
+                            if (!$hotel) {
+                                foreach ($all_ratings as $alt_rating) {
+                                    if ($alt_rating == $rating) continue;
+                                    if (!empty($hotels_by_ratings[$alt_rating][$night_no])) {
+                                        $hotel = $hotels_by_ratings[$alt_rating][$night_no][$i] ?? end($hotels_by_ratings[$alt_rating][$night_no]);
+                                        if ($hotel) break;
+                                    }
+                                }
+                            }
+            
+                            if ($hotel) {
+                                $combo[] = $hotel;
+                            }
+                        }
+                        if (!empty($combo)) {
+                            $merged_costs = [];
+                            $hotel_wise_costs = []; 
+                            $hotel_room_occupancies = [];
+                            
+                            // Group hotels first to process each hotel only ONCE
+                            $hotels_in_package = [];
+                            foreach ($combo as $hotel) {
+                                $hotel_name = $hotel['name'];
+                                if (!isset($hotels_in_package[$hotel_name])) {
+                                    $hotels_in_package[$hotel_name] = [
+                                        'data' => $hotel,
+                                        'night_count' => 0
+                                    ];
+                                }
+                                $hotels_in_package[$hotel_name]['night_count']++;
+                            }
+                            
+                            // Now calculate costs for each unique hotel
+                            foreach ($hotels_in_package as $hotel_name => $hotel_info) {
+                                $hotel = $hotel_info['data'];
+                                $night_count = $hotel_info['night_count'];
+                                $categories = $hotel['categories'];
+                                $has_early_checkin = $hotel['has_early_checkin'] ?? false;
+                                $has_late_checkout = $hotel['has_late_checkout'] ?? false;
+                                
+                                // Initialize arrays for this hotel if not exists
+                                if (!isset($hotel_wise_costs[$hotel_name])) {
+                                    $hotel_wise_costs[$hotel_name] = [];
+                                }
+                                
+                                // Get the hotel's nights array
+                                $hotel_nights = $categories['nights'] ?? [];
+                                
+                                // Calculate TOTAL services (nights + early check-in + late checkout)
+                                $total_services = 0;
+                                if (is_array($hotel_nights)) {
+                                    // Count ALL valid entries including 0 (early check-in) and -1 (late checkout)
+                                    $total_services = count(array_filter($hotel_nights, function($n) {
+                                        return $n !== null && $n !== '' && $n !== false;
+                                    }));
+                                } elseif ($hotel_nights > 0) {
+                                    $total_services = $hotel_nights;
+                                }
+                                
+                                foreach ($categories as $cat => $occupancies) {
+                                    if (!is_array($occupancies) || $cat === 'nights') continue;
+            
+                                    foreach ($occupancies as $occ) {
+                                        $occ_arr = explode('__', $occ);
+                                        $occ_type = trim(str_ireplace("Occupancy", "", $occ_arr[0] ?? ''));
+                                        $occ_total_cost = floatval($occ_arr[1] ?? 0);
+                                        
+                                        // Calculate cost per service (night/early check-in/late checkout)
+                                        $cost_per_service = $total_services > 0 ? $occ_total_cost / $total_services : 0;
+                                        
+                                        // Calculate how many services this hotel contributes to the package
+                                        $services_in_package = 0;
+                                        
+                                        // 1. Add for each regular night the hotel appears in package
+                                        $services_in_package += $night_count;
+                                        
+                                        // 2. Add for early check-in (ONCE if hotel has it)
+                                        if ($has_early_checkin) {
+                                            $services_in_package += 1;
+                                        }
+                                        
+                                        // 3. Add for late checkout (ONCE if hotel has it)
+                                        if ($has_late_checkout) {
+                                            $services_in_package += 1;
+                                        }
+                                        
+                                        $total_cost_for_package = $cost_per_service * $services_in_package;
+            
+                                        // Store room category information
+                                        if (!isset($hotel_room_occupancies[$hotel_name][$occ_type])) {
+                                            $hotel_room_occupancies[$hotel_name][$occ_type] = [];
+                                        }
+                                        
+                                        if (!in_array($cat, $hotel_room_occupancies[$hotel_name][$occ_type])) {
+                                            $hotel_room_occupancies[$hotel_name][$occ_type][] = $cat;
+                                        }
+            
+                                        // Add to hotel-wise costs
+                                        if (!isset($hotel_wise_costs[$hotel_name][$occ_type])) {
+                                            $hotel_wise_costs[$hotel_name][$occ_type] = 0;
+                                        }
+                                        $hotel_wise_costs[$hotel_name][$occ_type] += $total_cost_for_package;
+            
+                                        // Add to merged costs (total for all hotels in package)
+                                        if (!isset($merged_costs[$occ_type])) {
+                                            $merged_costs[$occ_type] = 0;
+                                        }
+                                        $merged_costs[$occ_type] += $total_cost_for_package;
+                                    }
+                                }
+                            }
+            
+                            $packages[] = [
+                                'name' => 'Package ' . $package_index++,
+                                'rating' => $rating,
+                                'hotels' => $combo,
+                                'merged_costs' => $merged_costs,
+                                'hotel_wise_costs' => $hotel_wise_costs,
+                                'hotel_room_occupancies' => $hotel_room_occupancies
+                            ];
+                        }
+                    }
+                }
+            
+                // Rest of the code remains the same...
+                // Check if we have any CNB/CWB occupancies across all packages
+                $has_cnb_occupancies = false;
+                $has_cwb_occupancies = false;
+                
+                foreach ($packages as $pkg) {
+                    foreach ($pkg['merged_costs'] as $type => $cost) {
+                        if (stripos($type, 'CNB') !== false) {
+                            $has_cnb_occupancies = true;
+                        }
+                        if (stripos($type, 'CWB') !== false) {
+                            $has_cwb_occupancies = true;
+                        }
+                    }
+                }
+            
+                $all_occupancy_types = ['Single', 'Double', 'Triple'];
+                $available_occupancy_types = [];
+                
+                if($total_child_persons > 0 && $has_cnb_occupancies) {
+                    $all_occupancy_types[] = 'CNB';
+                }
+                if($total_child_persons > 0 && $has_cwb_occupancies) {
+                    $all_occupancy_types[] = 'CWB';
+                }
+                
+                foreach ($packages as $pkg) {
+                    foreach ($all_occupancy_types as $type) {
+                        if (isset($pkg['merged_costs'][$type]) && $pkg['merged_costs'][$type] >= 0) {
+                            $available_occupancy_types[$type] = true;
+                        }
+                    }
+                }
+                
+                $cost_header_text = !empty($hotel_markup_percentage) ? 'Cost Per Room / Night' : 'Cost Per Person';
+                
+                $cost_html .= '<table border="1" cellpadding="6" cellspacing="0" style="width:100%; border-collapse:collapse; text-align:left;">';
+            
+                // First header row
+                $cost_html .= '<tr style="background:#d6d8d9; font-weight:bold;">';
+                $cost_html .= '<th rowspan="3">Package</th>';
+                $cost_html .= '<th rowspan="3">Hotel</th>';
+                $cost_html .= '<th colspan="' . (count($available_occupancy_types) * 2) . '" style="text-align:center;">' . $cost_header_text . '</th>';
+                $cost_html .= '</tr>';
+            
+                // Second header row
+                $cost_html .= '<tr style="background:#d6d8d9; font-weight:bold;">';
+                foreach (array_keys($available_occupancy_types) as $type) {
+                    $display_type = ($type === 'Double') ? 'Double/Twin' : $type;
+                    $cost_html .= '<th colspan="2">' . $display_type . '</th>';
+                }
+                $cost_html .= '</tr>';
+            
+                // Third header row
+                $cost_html .= '<tr style="background:#d6d8d9; font-weight:bold;">';
+                foreach (array_keys($available_occupancy_types) as $type) {
+                    $cost_html .= '<th>Room Category</th>';
+                    $cost_html .= '<th>Cost</th>';
+                }
+                $cost_html .= '</tr>';
+            
+                $package_count = count($packages);
+                $current_package = 0;
+                
+                foreach ($packages as $pkg) {
+                    $current_package++;
+                    
+                    // Group same hotel names across multiple nights
+                    $grouped_hotels = [];
+                    $hotel_extras = [];
+                    
+                    foreach ($pkg['hotels'] as $hotel) {
+                        $name = $hotel['name'];
+                        $rating = $hotel['rating'];
+                        $night_no = $hotel['night_no'];
+                        $has_early_checkin = $hotel['has_early_checkin'] ?? false;
+                        $has_late_checkout = $hotel['has_late_checkout'] ?? false;
+            
+                        if (!isset($grouped_hotels[$name])) {
+                            $grouped_hotels[$name] = [
+                                'name' => $name,
+                                'rating' => $rating,
+                                'nights' => [],
+                            ];
+                            $hotel_extras[$name] = [
+                                'early_checkin' => $has_early_checkin,
+                                'late_checkout' => $has_late_checkout
+                            ];
+                        }
+                        $grouped_hotels[$name]['nights'][] = $night_no;
+                    }
+            
+                    $rowspan = count($grouped_hotels);
+                    $first_row = true;
+            
+                    // Check for each occupancy type if all hotels have same room categories
+                    $same_room_categories = [];
+                    foreach (array_keys($available_occupancy_types) as $type) {
+                        $all_categories_same = true;
+                        $first_hotel_categories = null;
+                        
+                        foreach ($grouped_hotels as $hotel_name => $hotel_data) {
+                            $current_categories = $pkg['hotel_room_occupancies'][$hotel_name][$type] ?? [];
+                            $normalized_categories = array_map(function($cat) {
+                                if (strpos($cat, '(') !== false) {
+                                    $parts = explode('(', $cat, 2);
+                                    return trim($parts[0]);
+                                }
+                                return trim($cat);
+                            }, $current_categories);
+                            sort($normalized_categories);
+                            
+                            if ($first_hotel_categories === null) {
+                                $first_hotel_categories = $normalized_categories;
+                            } else {
+                                if ($first_hotel_categories != $normalized_categories) {
+                                    $all_categories_same = false;
+                                    break;
+                                }
+                            }
+                        }
+                        $same_room_categories[$type] = $all_categories_same;
+                    }
+            
+                    $hotel_index = 0;
+                    $total_hotels = count($grouped_hotels);
+                    foreach ($grouped_hotels as $hotel_name => $hotel_data) {
+                        $hotel_index++;
+                        $name = $hotel_data['name'];
+                        $rating = $hotel_data['rating'];
+                        $hotel_info = $this->get_hotel_bouting_resort_status($name);
+                        if ($hotel_info && isset($hotel_info['booting_resort']) && $hotel_info['booting_resort'] == 'yes') {
+                            $stars = 'BR';
+                        } else {
+                            $rating_value = (int) str_replace('_', ' ', $rating);
+                            $stars = '<span style="color: #ecc900ff;font-size:20px;">';
+                            
+                            for ($i = 1; $i <= 5; $i++) {
+                                if ($i <= $rating_value) {
+                                    $stars .= 'тШЕ';
+                                }
+                            }
+                            $stars .= '</span>';
+                        }
+                        
+                        $unique_nights = array_unique($hotel_data['nights']);
+                        $total_nights = count(array_filter($unique_nights, fn($n) => $n > 0));
+                        
+                        // Add extras info to nights text
+                        // $extras = [];
+                        if ($hotel_extras[$hotel_name]['early_checkin']) {
+                            // $extras[] = 'Early Check-in';
+                            $total_nights += 1;
+                        }
+                        if ($hotel_extras[$hotel_name]['late_checkout']) {
+                            // $extras[] = 'Late Check-out';
+                            $total_nights += 1;
+                        }
+                        
+                        $nights_text = $total_nights . 'N';
+                        // if (!empty($extras)) {
+                        //     $nights_text .= ' (' . implode(' + ', $extras) . ')';
+                        // }
+                        
+                        $cost_html .= '<tr>';
+                        if ($first_row) {
+                            $cost_html .= '<td rowspan="' . $rowspan . '" style="font-weight:bold;background-color: #d6d8d9;">' . $pkg['name'] . '</td>';
+                        }
+                        
+                        // $hotel_data = $this->get_hotel_id_by_name($name);
+
+                        // if ($hotel_data && !empty($hotel_data->image)) {
+                        //     // Has image тЖТ create clickable link
+                        //     $hotel_link = '<a href="' . base_url('hotel-details/' . base64_encode($hotel_data->id)) . '" target="_blank" title="Click here to view the hotel page">' . $name . '</a>';
+                        // } else {
+                        //     // No image тЖТ plain text
+                        //     $hotel_link = '<span title="This Facility is not Available">' . $hotel_link . '</span>';
+                        // }
+            
+                        $cost_html .= '<td style="background-color: #d6d8d9;"><span style="color:#6060a9;font-weight:bold;">' . $name . '</span> ('.$nights_text.')  '. $stars .'</td>';
+            
+                        // For each occupancy type
+                        foreach (array_keys($available_occupancy_types) as $type) {
+                            // Room Category column
+                            if ($same_room_categories[$type]) {
+                                if ($first_row) {
+                                    $cost_html .= '<td style="background-color: #d6d8d9;" rowspan="' . $rowspan . '">';
+                                    $room_categories = $pkg['hotel_room_occupancies'][$hotel_name][$type] ?? [];
+                                    if (!empty($room_categories)) {
+                                        foreach ($room_categories as $category) {
+                                            if (strpos($category, '(') !== false) {
+                                                $parts = explode('(', $category, 2);
+                                                $prefix = trim($parts[0]);
+                                                $cost_html .= $prefix . '<br>';
+                                            } else {
+                                                $cost_html .= $category . '<br>';
+                                            }
+                                        }
+                                    } else {
+                                        $cost_html .= '-';
+                                    }
+                                    $cost_html .= '</td>';
+                                }
+                            } else {
+                                $cost_html .= '<td style="background-color: #d6d8d9;">';
+                                $room_categories = $pkg['hotel_room_occupancies'][$hotel_name][$type] ?? [];
+                                if (!empty($room_categories)) {
+                                    foreach ($room_categories as $category) {
+                                        if (strpos($category, '(') !== false) {
+                                            $parts = explode('(', $category, 2);
+                                            $prefix = trim($parts[0]);
+                                            $cost_html .= $prefix . '<br>';
+                                        } else {
+                                            $cost_html .= $category . '<br>';
+                                        }
+                                    }
+                                } else {
+                                    $cost_html .= '-';
+                                }
+                                $cost_html .= '</td>';
+                            }
+                            
+                            // Cost column
+                            if (!empty($hotel_markup_percentage)) {
+                                // Cost Per Room / Night - show individual hotel cost
+                                $cost_html .= '<td style="background-color: #d6d8d9;">';
+                                $hotel_costs = $pkg['hotel_wise_costs'][$hotel_name] ?? [];
+                                $base_cost = isset($hotel_costs[$type]) ? $hotel_costs[$type] : 0;
+                                $base_cost += ($base_cost * ($hotel_markup_percentage / 100));
+                                $final_total_cost = $base_cost / $roe;
+                                
+                                if ($final_total_cost > 0) {
+                                    $cost_html .= '$' . number_format($final_total_cost, 0);
+                                } else {
+                                    $cost_html .= '-';
+                                }
+                                $cost_html .= '</td>';
+                            } else {
+                                // Cost Per Person - Show package total cost
+                                if ($first_row) {
+                                    $cost_html .= '<td style="background-color: #d6d8d9;" rowspan="' . $rowspan . '">';
+                                    
+                                    $base_cost = isset($pkg['merged_costs'][$type]) ? $pkg['merged_costs'][$type] : 0;
+                                    
+                                    // Apply markup percentage (you commented this out)
+                                    $base_cost += ($base_cost * ($markup_percentage / 100));
+                                    
+                                    // Add land package cost
+                                    if (stripos($type, 'CNB') !== false || stripos($type, 'CWB') !== false) {
+                                        $add_total = $grand_total_child_pp;
+                                    } else {
+                                        $add_total = $grand_total_pp;
+                                    }
+                                    
+                                    $final_cost = ($base_cost + $add_total) / $roe;
+                                    
+                                    if ($final_cost > 0) {
+                                        $cost_html .= '$' . number_format($final_cost, 0);
+                                    } else {
+                                        $cost_html .= '-';
+                                    }
+                                    $cost_html .= '</td>';
+                                }
+                            }
+                        }
+            
+                        if ($first_row) {
+                            $first_row = false;
+                        }
+                        $cost_html .= '</tr>';
+                    }
+                    
+                    if ($current_package < $package_count || empty($hotel_markup_percentage)) {
+                        $total_columns = 2 + (count($available_occupancy_types) * 2);
+                        $cost_html .= '<tr><td colspan="' . $total_columns . '" style="border-bottom: 4px solid #0c0c0cff; padding: 0; line-height: 4px;"></td></tr>';
+                    }
+                }
+                
+                // Add Land Package Cost rows
+                if(!empty($hotel_markup_percentage)){
+                    $total_cols = 2 + (count($available_occupancy_types) * 2);
+                    $converted_other = ($roe > 0) 
+                        ? number_format($grand_total_pp / $roe, 0) 
+                        : '0.00';
+                    $cost_html .= '<tr>
+                        <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Person</th>
+                        <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other.'</td>
+                    </tr>';
+                    
+                    if($total_child_persons > 0 && ($has_cnb_occupancies || $has_cwb_occupancies)){
+                        $converted_other_child = ($roe > 0) 
+                            ? number_format($grand_total_child_pp / $roe, 0) 
+                            : '0.00';
+                        $cost_html .= '<tr>
+                            <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Child</th>
+                            <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other_child.'</td>
+                        </tr>';
+                    }
+                }
+                $cost_html .= '</table>';
+            }
+            
+  
+            }
+            
+        }
+            else{
+            $grand_total_other = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price;
+                $markup_percentage = floatval($this->input->post('markup_percentage'));
+                $grand_total_other += ($grand_total_other * ($markup_percentage / 100));
+                $converted_other = ($roe > 0) 
+                    ? round(($grand_total_other / $total_persons) / $roe) 
+                    : 0;
+                    $cost_html .= '<table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width:100%; text-align: left;">';
+                $cost_html .= '<tr>
+                    <td style="background-color:#d6d8d9;color:red;width:50%;">Land Package Cost Per Person</td>
+                    <td style="background-color:#d6d8d9;color:red;width:50%;"> $'.$converted_other.'</td>
+                </tr>';
+                if($total_child_persons > 0){
+                    $grand_total_other_child = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+                            $markup_percentage = floatval($this->input->post('markup_percentage'));
+                            $grand_total_other_child += ($grand_total_other_child * ($markup_percentage / 100));
+                            $converted_other = ($roe > 0) 
+                                ? round(($grand_total_other_child / $total_child_persons) / $roe) 
+                                : 0;
+                    $cost_html .= '<tr>
+                        <td style="background-color:#d6d8d9;color:red;width:50%;">Land Package Cost Per Child</td>
+                        <td style="background-color:#d6d8d9;color:red;width:50%;"> $'.$converted_other.'</td>
+                    </tr>';    
+                }
+                $cost_html .= '</table>';
+
+        }
+        // echo '<pre>';print_r($hotel_costing_category_wise);
+        // echo $cost_html;die();
+            $flight_details=
+    '<div style="background-color: #d6d8d9;padding: 0 10px 10px;">
+    <div class="title" style="padding: 12px 20px; margin: 0 0 5px; background-color: #d6d8d9; text-align: center;"><h4 style="padding: 0; margin: 0; color: #6060a9; text-decoration: none; text-transform: capitalize;">FLIGHT ENVISAGED</h4></div>
+        <div class="text">
+            <div class="flight-wrapper">
+                <div class="flight-card from" style="width:100%;margin:5px 0px; display: flex;  padding: 12px; background-color: #fff;box-sizing: border-box;">
+                
+                    <div class="card-header" style="width: 24%; font-size: 15px; font-weight: 600; color: #2e3b4e; border-right: dashed 1px #ccc; margin-bottom: 6px; padding-bottom: 15px; display: flex;  align-items: center; gap: 8px;"> <i class="fa-solid fa-plane-arrival"></i> <h4 style="padding: 0; margin: 0; color: #000; text-decoration: none; text-transform: capitalize;display: inline;">Arrival</h4></div>
+                    <div style="width: 75%;padding-left: 20px;">';
+        if($this->input->post('arrival_airline') !=''){
+        $flight_details.='
+                    <div class="flight-row" style="margin-bottom: 4px; display: flex; justify-content: space-between;">
+                        <div class="label" style="font-size: 12px; color: #555; text-transform: uppercase;margin-bottom: 4px;">Airline:</div>
+                        <div class="value" style="font-size: 14px; font-weight: 500; color: #2d3748;">&nbsp;&nbsp;'.$this->input->post('arrival_airline').'</div>
+                    </div>';
+        }
+        $flight_details.='<div class="flight-row" style="margin-bottom: 4px; display: flex; justify-content: space-between;">
+                        <div class="label" style="font-size: 12px; color: #555; text-transform: uppercase;margin-bottom: 4px;">Time:</div>
+                        <div class="value" style="font-size: 14px; font-weight: 500; color: #2d3748;">&nbsp;&nbsp;'.ucfirst($this->input->post('arrival_time')).'</div>
+                    </div>
+                    </div>
+                </div>
+                <div class="flight-card to" style="width: 100%;margin:5px 0px; display: flex;  padding: 12px; background-color: #fff;box-sizing: border-box;">
+                
+                    <div class="card-header" style="width: 24%; font-size: 15px; font-weight: 600; color: #2e3b4e; border-right: dashed 1px #ccc; margin-bottom: 6px; padding-bottom: 15px; display: flex;  align-items: center; gap: 8px;"><i class="fa-solid fa-plane-departure"></i> <h4 style="padding: 0; margin: 0; color: #000; text-decoration: none; text-transform: capitalize;display: inline;">Departure</h4></div>
+                    <div style="width: 75%;padding-left: 20px;">';
+                    if($this->input->post('departing_airline') !=''){
+        $flight_details.='
+                    <div class="flight-row" style="margin-bottom: 4px; display: flex; justify-content: space-between;">
+                        <div class="label" style="font-size: 12px; color: #555; text-transform: uppercase;margin-bottom: 4px;">Airline:</div>
+                        <div class="value" style="font-size: 14px; font-weight: 500; color: #2d3748;">&nbsp;&nbsp;'.$this->input->post('departing_airline').'</div>
+                    </div>';
+        }
+        $flight_details.='
+                    <div class="flight-row" style="margin-bottom: 4px; display: flex; justify-content: space-between;">
+                        <div class="label" style="font-size: 12px; color: #555; text-transform: uppercase;margin-bottom: 4px;">Time:</div>
+                        <div class="value" style="font-size: 14px; font-weight: 500; color: #2d3748;">&nbsp;&nbsp;'.ucfirst($this->input->post('departing_time')).'</div>
+                    </div>
+                    </div>
+                </div>
+            </div>
+            </div>
+    </div>
+    </div>';
+
+            $only_itinerary_html = '
+                <div class="text" style="margin-top:-30px;">
+                    <div class="itinerary-table">
+                        <div class="itinerary-header" style="background-color: #d6d8d9;display: flex;padding: 10px;">
+                            <div class="col-one" style="width: 13% !important;">
+                                <b style="color:black !important;">Day</b>
+                            </div>
+                            <div class="col-two" style="border-left: solid 1px #8299b0;padding-left: 15px;width: 57% !important;">
+                                <b style="color:black !important;">Activity</b>
+                               
+                            </div>
+                            <div class="col-three" style="border-left: solid 1px #8299b0; padding-left: 15px; width: 30% !important;">
+                                <b style="color:black;">Remark</b>
+                               
+                            </div>
+                        </div>';
+
+            $total_transportation_outside = 0;
+            $total_transportation_inside = 0;
+            
+             $activities = '';
+            $daily_services = [];
+            $all_ticket_names = [];
+            $welcome_text_trimmed = 'Welcome to Almaty тАУ City of a thousand colours';
+
+            for ($i = 1; $i <= $cnt; $i++) {   
+                $cnt_text = !empty($this->input->post('itinerary_title_search_'.$i)) ? count($this->input->post('itinerary_title_search_'.$i)) : 0;
+                $cnt_id = !empty($this->input->post('itinerary_sites_id_'.$i)) ? count($this->input->post('itinerary_sites_id_'.$i)) : 0;
+                $day_has_service = false;
+                $has_non_miscellaneous = false;
+                $has_only_miscellaneous = false;
+
+                // Check site categories
+                if ($cnt_id > 0) {
+                    $miscellaneous_count = 0;
+                    $total_sites = 0;
+                    
+                    for ($j = 0; $j < $cnt_id; $j++) {
+                        $site_id = $this->input->post('itinerary_sites_id_'.$i)[$j] ?? '';
+                        
+                        if (!empty($site_id)) {
+                            $total_sites++;
+                            $site_category = $this->getSiteCategory($site_id);
+                            
+                            if ($site_category != 'miscellaneous') {
+                                $has_non_miscellaneous = true;
+                            } else {
+                                $miscellaneous_count++;
+                            }
+                        }
+                    }
+                    
+                    if ($miscellaneous_count > 0 && !$has_non_miscellaneous) {
+                        $has_only_miscellaneous = true;
+                    }
+                }
+                 $date_str = $this->input->post('itinerary_date')[$i-1] ?? '';
+                $formatted_date = '';
+            
+                if (!empty($date_str)) {
+                    $formatted_date = 'Day ' . $i . ' <br> ' . date('d-M-Y', strtotime($date_str));
+                } else {
+                    $formatted_date = 'Day ' . $i;
+                }
+
+
+                $only_itinerary_html .= '
+                    <div class="itinerary-item" style="border-bottom: dashed 1.6px #8299b070;align-items: center; display: flex; padding: 8px 10px;">
+                        <div class="col-one" style="width: 13% !important;">
+                            <span style="font-size: 17px; color: #3c556e; font-weight: 500;">' . $formatted_date . '</span>
+                        </div>
+                        <div class="col-two" style=" border-left: solid 1px #8299b0;padding-left: 15px;width: 57% !important;">
+                            <ul style="margin: 0;padding: 0 13px !important;">';
+                                
+                $ticket_name = $this->input->post('itinerary_entry_ticket_' . $i);
+                if (!empty($ticket_name)) {
+                    if (is_array($ticket_name)) {
+                        foreach ($ticket_name as $t) {
+                            if (!empty($t)) {
+                                $all_ticket_names[] = $t;
+                            }
+                        }
+                    } else {
+                        $all_ticket_names[] = $ticket_name;
+                    }
+                }
+
+                if ($has_only_miscellaneous && $i != 1 && $i != $cnt) {
+                    $day_has_service = true;
+                    
+                    for ($j = 0; $j < $cnt_text; $j++) {
+                        if ($i == $cnt && $j == 0) {
+                            continue;
+                        }
+                        
+                        $site_id = $this->input->post('itinerary_sites_id_'.$i)[$j] ?? '';
+                        $site_category = $this->getSiteCategory($site_id);
+                        
+                        
+                        if ($site_category == 'miscellaneous') {
+                            $t = ($this->input->post('itinerary_time_' . $i)[$j] != '') 
+                                ? '(' . $this->input->post('itinerary_time_' . $i)[$j] . ') ' 
+                                : '';
+                            
+                            $title = trim($this->input->post('itinerary_title_search_' . $i)[$j] ?? '');
+
+                            if (stripos($title, 'Welcome to Almaty тАУ City of a thousand colours!') !== false) {
+                               
+                                $only_itinerary_html .= '<li>' . $welcome_text_trimmed . '</li>';
+                            } else {
+                               
+                                $only_itinerary_html .= '<li>' . htmlspecialchars($title) . '</li>';
+                            }
+                        }
+                    }
+
+                    $only_itinerary_html .= '<li>No service <br>Today is a free and easy day at your disposal</li>';
+
+                    if (!empty($this->input->post('itinerary_activities_'.$i))) {
+                        foreach ($this->input->post('itinerary_activities_'.$i) as $activity) {
+                            if ($activity != "") {
+                                $activities .= '<li style="position:relative; color:#555555;">' . $activity . '</li>';
+                                $only_itinerary_html .= '<li>' . $activity . '</li>';
+                            }
+                        }
+                    }
+                } 
+                else if ($cnt_text > 0 && $has_non_miscellaneous) {
+                    $day_has_service = true;
+                    
+                    for ($j = 0; $j < $cnt_text; $j++) {
+                        if ($i == $cnt && $j == 0) {
+                            continue;
+                        }
+                        
+                        $t = ($this->input->post('itinerary_time_' . $i)[$j] != '') 
+                            ? '(' . $this->input->post('itinerary_time_' . $i)[$j] . ') ' 
+                            : '';
+                        
+                        $title = trim($this->input->post('itinerary_title_search_' . $i)[$j] ?? '');
+
+                        if (stripos($title, 'Welcome to Almaty тАУ City of a thousand colours!') !== false) {
+                            $only_itinerary_html .= '<li>' . $welcome_text_trimmed . '</li>';
+                        } else {
+                            $only_itinerary_html .= '<li>' . htmlspecialchars($title) . '</li>';
+                        }
+                    }
+                    
+                    $itinerary_entry_ticket_html = '';
+                    if (!empty($all_ticket_names) && is_array($all_ticket_names)) {
+                        $unique_tickets = array_unique($all_ticket_names);
+                        foreach ($unique_tickets as $ticket) {
+                            $itinerary_entry_ticket_html .= '<li style="position:relative; color:#555555; margin-bottom:6px;">' . $ticket . '</li>';
+                        }
+                    }
+
+                    if (!empty($this->input->post('itinerary_activities_'.$i))) {
+                        foreach ($this->input->post('itinerary_activities_'.$i) as $activity) {
+                            if ($activity != "") {
+                                $activities .= '<li style="position:relative; color:#555555;">' . $activity . '</li>';
+                                $only_itinerary_html .= '<li>' . $activity . '</li>';
+                            }
+                        }
+                    }
+                } 
+                else {
+                    $only_itinerary_html .= '<li>No service <br>Today is a free and easy day at your disposal</li>';
+                }
+
+                $only_itinerary_html .= '
+                            </ul>
+                        </div>
+                        <div class="col-two" style="border-left: solid 1px #8299b0; padding-left: 15px; width: 30% !important;">
+                            <ul style="margin: 0;padding: 0 13px !important;">';
+                                
+                if ($i == 1) {  
+                    $only_itinerary_html .= '<li>Refreshing napkins & chocolate inside the vehicle upon arrival</li>';
+                }
+                
+                if ($i == $cnt) {
+                    $only_itinerary_html .= '<li>Departure Souvenir Gift</li>';
+                } 
+                else if ($has_only_miscellaneous && $i != 1 && $i != $cnt) {
+                    $only_itinerary_html .= '<li>No vehicle No Guide</li>';
+                }
+                else if ($has_non_miscellaneous) {
+                    $only_itinerary_html .= '<li>Free Wifi</li>';
+                }
+                else if (!$day_has_service) {
+                    $only_itinerary_html .= '<li>No vehicle No Guide</li>';
+                }
+                
+                $only_itinerary_html .= '</ul>
+                        </div>
+                    </div>';
+
+                $daily_services[$i] = $day_has_service;
+
+                if (array_key_exists('hdn_transportation_outside_'.$i, $this->input->post())) {
+                    $total_transportation_outside += $this->input->post('hdn_transportation_outside_'.$i);
+                }
+                if (array_key_exists('hdn_transportation_inside_'.$i, $this->input->post())) {
+                    $total_transportation_inside += $this->input->post('hdn_transportation_inside_'.$i);
+                }
+            }
+
+            $only_itinerary_html .= '
+                    </div>
+                </div>';
+                
+                $vehicless_json = $this->input->post('vehicless');
+                $vehicless_arr = json_decode($vehicless_json, true);
+                $vehicles_with_name = [];
+            
+                    if (!empty($vehicless_arr)) {
+                        foreach ($vehicless_arr as $veh) {
+                            $vehicle_id = $veh['vehicle_id'];
+                            $qnty = $veh['qnty'];
+            
+                            if (!empty($vehicle_id)) {
+                                $query = $this->db->select('vehicle_name')
+                                                ->from('transportation')
+                                                ->where('id', $vehicle_id)
+                                                ->get();
+            
+                                if ($query && $query->num_rows() > 0) {
+                                    $vehicle = $query->row();
+                                    $vehicles_with_name[] = [
+                                        $vehicle_name = $vehicle->vehicle_name,
+                                    ];
+                                } else {
+                                    // Fallback if vehicle not found
+                                    $vehicles_with_name[] = [
+                                        $vehicle_name ='',
+                                    ];
+                                }
+                            }
+                        }
+                    }
+            
+                    // Now $vehicles_with_name contains vehicle names and quantities
+                    foreach ($vehicles_with_name as $v) {
+                           
+                        $vehicle_name=$vehicle_name;
+                    }
+            // echo $itinerary_entry_ticket_html ; die();
+            $short_itinerary = '
+                <div class="title" style="padding: 12px 20px; background-color: #d6d8d9; text-align: center;">
+                    <h4 style="color:#6060a9; margin: 0;">
+                        SHORT ITINERARY - '.$enquiry->number_of_nights.' NIGHT - '.($enquiry->number_of_nights + 1).' DAYS
+                    </h4>
+                    <div style="margin-top: 8px;">
+                        <a href="' . base_url('brief-itinerary/' . base64_encode($enquiry_id)) . '" 
+                        target="_blank" 
+                        style="color: blue; text-decoration: none; font-weight: bold;">
+                        Click here for detailed itinerary.
+                        </a>
+                    </div>
+                </div>';
+                $activites = '';
+                
+         $inclusions='<div style="background-color: #d6d8d9;  padding: 0px 10px 1px 10px;"><div class="title" style=" background-color: #d6d8d9; text-align: center;">
+                <h4 style="padding:12px 20px; margin: 0; color:red; text-decoration: none; text-transform: capitalize;">ABOVE PRICE INCLUDES</h4>
+            </div>';
+            if($this->input->post('hotel_status')=="yes"){
+         $inclusions.='<div style="padding: 10px 15px;margin: 0 2px;background-color: #fff;width: 100%;box-sizing: border-box;">
+            <h4 style="padding: 0; margin: 0; color: #000; text-decoration: none; text-transform: capitalize;display: inline;">Stay :</h4>
+            <p style="padding: 0; margin: 0;display: inline;">As Mentioned Above</p>
+        </div>';}
+            $inclusions.='<div class="text">
+                <div class="our-inclusion" style="">
+                   <div class="inclusion-item" style="background-color: #fff;margin: 10px 2px;padding: 1px 0px 12px 0 !important;">
+                        <div class="box" style"padding: 1px 0px 12px 0 !important;">
+                            <h4 style="padding-left: 12px;padding-top: 0; margin: 10px 0px;">Transportation & Guide Services</h4>
+                            <ul style="margin:0; padding-left:20px;">
+                                <li style="">All transfers & sightseeing by private vehicle ('.$vehicle_name.') for 12 Hrs (10AM тАУ 10PM Only) </li>
+                                <li style="">Airport тАУ hotel тАУ airport transfers</li>
+                                <li style="">Dinner Transfers Only</li>
+                                <li style="">All transfers & sightseeing include services of an English-speaking '.$guide.'.</li>
+                                <li style="">Airport meet & greet by our English-speaking staff.</li>
+                            
+                            </ul>
+                        </div>
+                    </div>';
+
+                $meal_data = json_decode($meal_type_daywise_price, true);
+                    $meal_counts = [];
+                    if (is_array($meal_data)) {
+                        foreach ($meal_data as $day => $meals) {
+                            foreach ($meals as $meal_type => $details) {
+                                $meal_type_clean = strtolower(str_replace(' ', '_', $meal_type)); 
+                                if (isset($meal_counts[$meal_type_clean])) {
+                                    $meal_counts[$meal_type_clean]++;
+                                } else {
+                                    $meal_counts[$meal_type_clean] = 1;
+                                }
+                            }
+                        }
+                    }
+                $inclusions.='
+                    <div class="inclusion-item" style="background-color: #fff;margin: 10px 2px;padding: 1px 0px 12px 0 !important;">
+                        <div class="box" style"border-left: solid 1px #ccc; background-color: #d6d8d9;padding: 1px 0px 12px 0 !important;">
+                            <h4 style="padding-left: 12px;padding-top: 0; margin: 10px 0px;">Entrance & Activities</h4>
+                            <ul style="margin:0; padding-left:20px;">
+                            '.$itinerary_entry_ticket_html.'
+                                '.$activities;
+                                if(!empty($final_toll_price) || $final_toll_price >0)
+                                { 
+                                    $inclusions.='<li style="color:#555555;">Toll Included</li>';
+                                }
+
+                           $inclusions.='
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="inclusion-item" style="background-color: #fff;margin: 10px 2px;padding: 1px 0px 12px 0 !important;">
+                         <div class="box" style"width: 100%; height: 90%; border-left: solid 1px #ccc; background-color: #fff !important;padding: 1px 0px 12px 0;">
+                            <h4 style="padding-left: 12px;padding-top: 0px; margin: 10px 0px;">Meals</h4>
+                            <ul style="margin:0; padding-left:25px;">';
+                                    $inclusions .= "<li style='position:relative;  color:#555555; margin-bottom:6px;'>Breakfast at your hotel</li>";
+                            foreach ($meal_counts as $type => $count) {
+                                if ($count > 0) {
+                                    $email_summary = $count . ' - ' . ucfirst(str_replace('_', ' ', $type));
+                                    $inclusions .= "<li style='position:relative;  color:#555555; margin-bottom:6px;'>$email_summary</li>";
+                                }
+                            }
+                            $inclusions.='</ul>
+                        </div>
+                          </div>
+                          <div class="inclusion-item" style="background-color: #fff;margin: 10px 2px;padding: 1px 0px 12px 0 !important;">
+                        <div class="box" style"border-left: solid 1px #ccc; background-color: #d6d8d9; margin-top:-100px !important;">
+                            <h4 style="padding-left: 12px;padding-top:0px; margin: 5px 0px;">Complimentary Services</h4>
+                            <ul style="margin:0; padding-left:20px;">';
+                            $mandatory_services_json = $_POST['mandatory_services'] ?? '[]';
+                            $mandatory_services = json_decode($mandatory_services_json, true);
+                                if (!empty($mandatory_services)) {
+                                    $service_text1 = rtrim(explode("|", $mandatory_services[0]['service'])[0], "_");
+                                    $price1        = explode("|", $mandatory_services[0]['service'])[1];
+                                    $qnty1         = $mandatory_services[0]['qnty'];
+
+                                    $service_text2 = rtrim(explode("|", $mandatory_services[1]['service'])[0], "_");
+                                    $price2        = explode("|", $mandatory_services[1]['service'])[1];
+                                    $qnty2         = $mandatory_services[1]['qnty'];
+
+                                    $service_text3 = rtrim(explode("|", $mandatory_services[2]['service'])[0], "_");
+                                    $price3        = explode("|", $mandatory_services[2]['service'])[1];
+                                    $qnty3         = $mandatory_services[2]['qnty'];
+
+                                    $service_text4 = rtrim(explode("|", $mandatory_services[3]['service'])[0], "_");
+                                    $price4        = explode("|", $mandatory_services[3]['service'])[1];
+                                    $qnty4         = $mandatory_services[3]['qnty'];
+
+                                    $inclusions .= "<li style=''>$service_text3</li>";
+                                    $inclusions .= "<li style=''>$service_text2</li>";
+                                    $inclusions .= "<li style=''>$service_text4</li>";
+                                    $inclusions .= "<li style=''>$service_text1</li>";
+
+                                    // foreach ($mandatory_services as $service) {
+                                    //     // print_r()
+                                    //     $service_text = rtrim(explode("|", $service['service'])[0], "_");
+                                    //     $price = explode("|", $service['service'])[1];
+                                    //     $qnty = $service['qnty'];
+                                    //     $inclusions .= "<li style='position:relative; list-style:none; color:#555555; margin-bottom:6px;'>{$service_text}</li>";
+                                    // }
+                                } else {
+                                    $inclusions .="<li style='position:relative; list-style:none; color:#555555; margin-bottom:6px;'>No mandatory services provided.</li>";
+                                }
+                            $inclusions.='</ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </div>';
+            // $activities_html='<b>Click here for <a href="'.base_url('assets/aditional_activities_cost.pdf').'" target="_blank" >Additional Activities.</b></a>';
+                $activities_html='<br><span><b style="font-size:18px;"><i class="fas fa-tasks"></i> Click here for <a href="'.base_url('assets/aditional_activities_cost.pdf').'" target="_blank" >Additional Activities.</b></a></span><br><br>';
+
+               $country = ucfirst($currency->country); 
+           
+                
+        $credentials = SendinBlue\Client\Configuration::getDefaultConfiguration()->setApiKey('api-key', SENDINBLUE_API_KEY);
+        $apiInstance = new SendinBlue\Client\Api\TransactionalEmailsApi(new GuzzleHttp\Client(),$credentials);
+
+        $sendSmtpEmail = new \SendinBlue\Client\Model\SendSmtpEmail([
+            'subject' => $email_subject,
+            'sender' => ['name' => 'KAZIN SUPPORT', 'email' => 'back.office@kazindmc.com'],
+            'replyTo' => ['name' => 'KAZIN SUPPORT', 'email' => 'back.office@kazindmc.com'],
+            'to' => [ 
+                    [ 'name' => 'Sumeet Verma', 'email' => 'anant.thaver@gmail.com'],
+                    [ 'name' => 'Sumeet Verma', 'email' => 'back.office@kazindmc.com'],
+                    // [ 'name' => 'Sumeet Verma', 'email' => 'rohit@kazindmc.com'],
+                    [ 'name' => 'Sumeet Verma', 'email' => 'sumeetthaver@gmail.com'],
+                    // [ 'name' => 'Sumeet Verma', 'email' => 'pankaj@thavertech.com'],
+                    // [ 'name' => 'Sumeet Verma', 'email' => 'mailus@thavertech.com'],
+                    ],
+            'htmlContent' => '<!DOCTYPE html><html><head>
+        <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+                <style>
+                           
+        .title {
+
+            background-color: #d6d8d9;
+            text-align: center;
+        }
+        label {
+            font-weight: bold;
+        }
+   
+        .flight-card {
+            background-color: #fff;
+            border: solid 1px #ccc;
+            width: 100%;
+          
+            padding: 15px 24px;
+        }
+            .card-header {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2e3b4e;
+            margin-bottom: 6px;
+            padding-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .flight-row {
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+            .label {
+            font-size: 12px;
+            color: #778093;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .value {
+            font-size: 14px;
+            font-weight: 500;
+            color: #2d3748;
+        }
+            .title>h4 {
+            padding: 0;
+            margin: 0;
+            color: #000;
+            text-decoration: none;
+            text-transform: capitalize;
+        }
+   
+        .col-one>span {
+            font-size: 18px;
+            color: #3c556e;
+            font-weight: 500;
+        }
+
+        .inclusion-item {
+            width: 100%;
+                margin: 0 4px;
+        }
+
+        .box h4 {
+            padding-left: 12px;
+            padding-top: 12px;
+        }
+
+        .inclusion-item ul li {
+            position: relative;
+            color: #555555;
+        }
+
+        .inclusion-item ul li::before {
+            position: absolute;
+            color: #242424;
+            left: -22px;
+            font-size: 11px;
+            top: 0;
+        }
+          .activites-item {
+            background: #d6d8d9;
+            display: flex;
+            /* width: 33.33%; */
+            padding: 8px 20px;
+            margin-bottom: 6px;
+        }
+        .our-activites {
+            display: flex;
+        }
+        .activites-item>div:nth-child(1) {
+            width: 10%;
+        }
+        .activites-item>div:nth-child(2) {
+            width: 6%;
+        }
+        .activites-item>div:nth-child(3) {
+            width: 80%;
+        }
+        .our-activites>div {
+            width: 33.33%;
+        }
+        .activites-item i {
+            color: #6c6c6c;
+        }
+        .top-table+br{
+                display: none !important;
+        }
+         .top-table+br+br{
+                display: none !important;
+        }
+                </style>
+            </head><body>
+                <div class="table-container">
+                    <table class="top-table" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#d6d8d9;">
+                        <tr>
+                            <!-- Logo column -->
+                            <td align="left" style="">
+                            <img src="https://crm.kazindmc.com/assets/images/login-logo.png" alt="Logo" width="95" style="display:block; border:0; max-width:95px;">
+                            </td>
+
+                            <!-- Text column -->
+                            <td align="right" style="font-size:15px;color:#2e3b4e;padding-right:8px;">
+                            <span style="font-weight:700;">The Most Trusted, Reliable & Innovative DMC for</span><br>
+                 
+                            <span style="display: block;width: 100%;"><ul style="text-transform:uppercase;display: inline-flex;margin:0px;">
+                            <li style="color:#ed1e88;padding-right: 18px;font-size: 12px;">Kazakhstan</li>
+                            <li style="color:#31448e;padding-right: 18px;font-size: 12px;">Georgia</li>
+                            <li style="color:#ec1f23;padding-right: 18px;font-size: 12px;">Azerbaijan</li>
+                            <li style="color:#1ca9c9;padding-right: 18px;font-size: 12px;">Uzbekistan</li>
+                            <li style="padding-right: 18px;font-size: 12px;color:#B85C38;">Armenia</li>
+                            <li style="color:#d0a600;font-size: 12px;">Belarus</li>
+                            </ul></span>
+                            
+                            </td>
+                        </tr>
+                    </table>
+                    
+                    <table style="width:100%;">
+                    <br>
+                        <tr><td colspan="12" align="left">Dear Mr/Mrs '.$this->input->post('agent_name').',</td></tr>
+                       
+                        <tr><td colspan="12" align="left">Greetings from Kazin DMC!!</td></tr>
+                        <tr><td colspan="12" align="left">Please find given below Commercial Proposal of '.$this->input->post('arrival_city').' ('.$country.') <b>No of pax('.$total_persons_new.')</b> <span style="color:#6060a9;"><b>For '.$enquiry->number_of_nights.'N</b>/<b>'.($enquiry->number_of_nights+1).'D</b></span></td></tr>
+
+
+                        <tr><td colspan="12" align="left">'.$enquiry->number_of_nights.'N Land Package ('.(($this->input->post('hotel_status')=="yes")?'<label style="color:red;">With Hotel</label>':'<label style="color:red;">Without Hotel</label>').')</td></tr>
+                        '.$remark_html.'
+                        <tr><td colspan="12" align="left">'.$cost_html.'</td></tr>
+                        <tr><td colspan="12" align="left">'.$inclusions.'</td></tr>
+                        <tr><td colspan="12" align="left">'.$flight_details.'</td></tr>
+                        <tr><td colspan="12" align="left">'.$short_itinerary.'</td></tr>
+                        <tr><td colspan="12" align="left">'.$only_itinerary_html.'</td></tr>
+                        <tr><td colspan="12" align="left">'.$activities_html.'</td></tr>
+                        <br><br>
+                        <tr><td style="background-color:#d6d8d9;padding-top: 10px;display: block;margin-bottom: 4px;"  align="left"><span style="color:#1974D2;text-decoration:underline;font-weight:bold;padding-left: 15px;">EXCLUSIONS:</span>
+                        <br>
+                        '.$this->input->post('exclusions').'
+                            
+                        </td>  
+                        
+                        </tr>
+                        
+                        
+                        
+                         <tr><td style="background-color:#d6d8d9;padding-top: 10px;display: block;margin-bottom: 4px;" align="left">
+                            <span style="color:#1974D2;text-decoration:underline;font-weight:bold;padding-left: 15px; display:inline-block;">IMPORTANT NOTES:</span><br>
+                            <div style="padding-left:24px;margin-top:5px;">
+                                <div style="color:red;">1. Above quote is valid for 72 hrs</div>
+                                <div style="color:red;">2. Above quote is subject to currency fluctuation</div>
+                                <div style="color:red;">3. This costing is calculated at an ROE  of 1 USD = '.($roe ? $roe : $currency->country_currency_value).' '.$currency->currency_abbr.'.</div>
+                                <div style="color:red;">4. We encourage our partners to conduct due diligence and review hotel feedback online before making any bookings.</div>
+                            </div>
+                            '.$this->input->post('important_notes').'
+                        </td></tr>
+                        <tr><td style="background-color:#d6d8d9;padding-top: 10px;display: block;margin-bottom: 4px;" align="left">
+                        
+                            
+                        <span style="color:#1974D2;text-decoration:underline;font-weight:bold;padding-left: 15px;">CANCELLATION POLICY:</span><br>
+                        <div style="padding-left: 20px;">'.$this->input->post('cancellation_policy').'</div>
+                        </td></tr>
+                        
+                        </table>
+
+                </div>
+            </body></html>',
+        ]);
+
+        try {
+            $sendinblue_response = $apiInstance->sendTransacEmail($sendSmtpEmail);
+            //print_r($sendinblue_response);
+        } catch (Exception $e) {
+            //echo $e->getMessage(),PHP_EOL;
+        }
+        
+        $response = ['response'=>'s','details'=>'','msg'=>'<div class="alert alert-success">Quotation Emailed Successfully!</div>'];
+        echo json_encode($response);
+        exit;		
+    }     
+
+      public function get_email_body()
+    {
+        $vehicless_json = $this->input->post('vehicless');
+        $vehicless_arr = json_decode($vehicless_json, true);
+
+        $postData = $this->input->post();
+        $cnt = count($postData['itinerary_date']);
+        
+        $reduced_margins = json_decode($this->input->post('reduced_margins'), true) ?? [];
+        $reduced_land_margins = json_decode($this->input->post('reduced_land_margins'), true) ?? [];
+
+        // Store markup data for later use
+        $data['reduced_margins'] = $reduced_margins;
+        $data['reduced_land_margins'] = $reduced_land_margins;
+
+        if (empty($postData['enquiry_id'])) {
+            show_error('Enquiry ID is required to generate email body.');
+            return;
+        }
+
+        $data['form'] = $postData;
+        $enquiry_id = $postData['enquiry_id'];
+
+        $where = 'enquiry.id = "' . $this->db->escape_str($enquiry_id) . '"';
+        $join = [
+            [
+                'type' => 'LEFT',
+                'join_table' => 'company_details',
+                'condition' => 'company_details.company_id = enquiry.company_details_id'
+            ],
+            [
+                'type' => 'LEFT',
+                'join_table' => 'company',
+                'condition' => 'company.company_id = enquiry.company_id'
+            ],
+        ];
+
+        $enquiryData = $this->common_model->get_data('enquiry', '', '', '*', $where, '', false, $join);
+        if (empty($enquiryData)) {
+            show_error('No enquiry found for ID ' . $enquiry_id);
+            return;
+        }
+
+        $data['enquiry'] = $enquiryData[0];
+        $total_persons = $data['enquiry']->number_persons;
+        $total_child_persons = $data['enquiry']->number_child;
+        $data['total_adults'] = $data['enquiry']->number_persons;
+        $data['total_child'] = $data['enquiry']->number_child;
+        $data['total_persons'] = $data['enquiry']->number_persons + $data['enquiry']->number_child;
+        $data['saved_created_date'] = $postData['saved_created_date'] ?? '';
+        $data['transportationData'] = $postData['transportationData'] ?? '';
+        $data['daywise_transfer_data'] = $postData['daywise_transfer_data'] ?? '';
+        $data['routewise_transfer_data'] = $postData['routewise_transfer_data'] ?? '';
+        $data['country_isd_codes'] = $this->common_model->get_data('country_isd_codes', '', '', '*', '', '', $count = false);
+        
+        // Get currency
+        $char = substr($data['enquiry']->enquiry_abbr, 1, 2);
+        $country = COUNTRY_ABBR;
+
+        $where = 'currency_value.country = "' . strtolower($country[$char]) . '" AND currency_value.status = "active" Order by currency_value.id DESC';
+        $currencyData = $this->common_model->get_data('currency_value', '', '', '*', $where, '', false);
+        // $currency = !empty($currencyData) ? $currencyData[0] : null;
+        $currency = isset($postData['roe']) ? (float)$postData['roe'] : '';
+
+        $data['currency'] = $currency;
+        $data['country'] = $currencyData[0]->country;
+        $data['currency_abbr'] = $currencyData[0]->currency_abbr;
+        $activites = '';
+        $day_wise_entrance = '';
+        $entrance_data_json = json_decode($this->input->post('entrance_data_json'), true) ?? [];
+        $entrance_display_map = []; // for remark column (without site name)
+        $entrance_data_map = [];    // for $day_wise_entrance (with site name)
+
+        if (!empty($entrance_data_json)) {
+            foreach ($entrance_data_json as $dayData) {
+                $day = $dayData['day'] + 1; // day from array
+
+                if (!empty($dayData['entrances'])) {
+                    foreach ($dayData['entrances'] as $entrance) {
+                        $entrance_name_only = $entrance['entrance_name'];
+                        $site_name = '';
+
+                        // Fetch site name if site_id is provided
+                        if (!empty($entrance['site_id'])) {
+                            $site_query = $this->db
+                                ->select('site_name') // adjust column name if needed
+                                ->from('sites')
+                                ->where('id', $entrance['site_id'])
+                                ->get();
+
+                            if ($site_query->num_rows() > 0) {
+                                $site_row = $site_query->row();
+                                $site_name = $site_row->site_name; // use correct column
+                            }
+                        }
+
+                        $entrance_display_map[$day][] = $entrance_name_only;
+
+                        $entrance_name_with_site = $entrance_name_only;
+                        if (!empty($site_name)) {
+                            $entrance_name_with_site .= ' (' . $site_name . ')';
+                        }
+                        $entrance_data_map[$day][] = $entrance_name_with_site;
+                    }
+                }
+            }
+        }
+        $is_georgia = (strtolower($data['country']) === 'kazakhstan');
+        $daywise_transfer_data = json_decode($data['daywise_transfer_data'], true);
+
+        $train_by_day = [];
+        if (!empty($daywise_transfer_data)) {
+            foreach ($daywise_transfer_data as $transfer) {
+                if (isset($transfer['day']) && isset($transfer['transfer_mode']) && $transfer['transfer_mode'] == 'train') {
+                    $day = $transfer['day'];
+                    $train_by_day[$day] = $transfer;
+                }
+            }
+        }
+        
+        $routewise_transfer_data = json_decode($data['routewise_transfer_data'], true);
+
+        $route_by_day = [];
+
+        if (!empty($routewise_transfer_data)) {
+            foreach ($routewise_transfer_data as $route) {
+
+                if (
+                    isset($route['day']) &&
+                    isset($route['transfer_mode']) &&
+                    $route['transfer_mode'] == 'train'
+                ) {
+                    $day = $route['day'];
+
+                    if (!isset($route_by_day[$day])) {
+                        $route_by_day[$day] = [];
+                    }
+
+                    $route_by_day[$day][] = $route; // multiple routes per day
+                }
+            }
+        }
+
+       
+        $only_itinerary_html = '
+        <div class="text">
+            <table class="itinerary-table" width="100%">
+                <tr class="itinerary-header" style=" color: #fff; background-color: #d6d8d9; padding: 10px;">
+                    <td width="17%" class="col-one"style="padding:10px;">
+                        <b style="color:black;">Day</b>
+                    </td>
+                    <td width="56%" class="col-two" style="border-left: solid 1px #8299b0;padding-left: 15px;">
+                        <b style="color:black;"style="padding:10px 0;">Itinerary</b>
+                    </td>
+                    <td width="25%" class="col-three" style="border-left: solid 1px #8299b0; padding-left: 15px;">
+                        <b style="color:black;"style="padding:10px 0;">Remark</b>
+                       
+                    </td>
+                </tr>';
+
+        $total_transportation_outside = 0;
+        $total_transportation_inside = 0;
+        $n = 0;
+        
+        $all_ticket_names = [];
+        $has_service = false;
+        $daily_services = []; 
+        
+        $mandatory_services_json = $postData['mandatory_services'] ?? '[]';
+        $mandatory_services_arr = json_decode($mandatory_services_json, true) ?: [];
+        $active_mandatory_services = [];
+
+        // Selected mandatory services ka naam nikal rahe hain
+        foreach ($mandatory_services_arr as $ms) {
+            if (!empty($ms['service'])) {
+                $service_text = strtolower(rtrim(explode("|", $ms['service'])[0], "_"));
+                $active_mandatory_services[] = $service_text;
+            }
+        }
+
+        // Flags set kar rahe hain check karne ke liye
+        $has_napkins = false;
+        $has_wifi = false;
+        $has_souvenir = false;
+
+        foreach ($active_mandatory_services as $srv) {
+            if (strpos($srv, 'napkin') !== false || strpos($srv, 'chocolate') !== false) $has_napkins = true;
+            if (strpos($srv, 'wi-fi') !== false || strpos($srv, 'wifi') !== false) $has_wifi = true;
+            if (strpos($srv, 'souvenir') !== false) $has_souvenir = true;
+        }
+
+        for ($i = 1; $i <= $cnt; $i++) {   
+            $cnt_text = !empty($this->input->post('itinerary_title_search_'.$i)) ? count($this->input->post('itinerary_title_search_'.$i)) : 0;
+            $cnt_id = !empty($this->input->post('itinerary_sites_id_'.$i)) ? count($this->input->post('itinerary_sites_id_'.$i)) : 0;
+            
+            $day_has_service = false;
+            $has_non_miscellaneous = false;
+            $has_only_miscellaneous = false;
+            $welcome_text_trimmed = 'Welcome to Almaty - City of a thousand colours';
+            $welcome_tbilisi_text = 'Welcome to Tbilisi';
+            $welcome_tashkent_text = 'Welcome to Tashkent - The Cultural Crossroads of Uzbekistan';
+            $welcome_baku_text = 'Welcome to Baku - A City of ancient Charm & Modern Marvel';
+
+            if ($cnt_id > 0) {
+                $miscellaneous_count = 0;
+                $total_sites = 0;
+                
+                for ($j = 0; $j < $cnt_id; $j++) {
+                    $site_id = $this->input->post('itinerary_sites_id_'.$i)[$j] ?? '';
+                    
+                    if (!empty($site_id)) {
+                        $total_sites++;
+                        $site_category = $this->getSiteCategory($site_id);
+                        
+                        if ($site_category != 'miscellaneous') {
+                            $has_non_miscellaneous = true;
+                        } else {
+                            $miscellaneous_count++;
+                        }
+                    }
+                }
+                
+                if ($miscellaneous_count > 0 && !$has_non_miscellaneous) {
+                    $has_only_miscellaneous = true;
+                }
+            }
+            $date_str = $this->input->post('itinerary_date')[$i-1] ?? '';
+            $formatted_date = '';
+            
+            if (!empty($date_str)) {
+                $timestamp = strtotime($date_str);
+                $weekday = date('l', $timestamp); 
+                $formatted_date = 'Day ' . $i . ' (' . $weekday . ') <br> <b>' . date('d-M-Y', strtotime($date_str)).'</b>';
+            } else {
+                $formatted_date = 'Day ' . $i;
+            }
+
+            $only_itinerary_html .= '
+                <tr class="itinerary-item" style=" padding: 8px 10px; align-items: center;">
+                    <td class="col-one" style="width: 18% !important;border-bottom:dashed 1.6px #8299b070;padding:10px 0;">
+                        <span style="font-size: 17px; color: #3c556e; font-weight: 500;">' . $formatted_date . '</span>
+                    </td>
+                    <td class="col-two" style=" border-left: solid 1px #8299b0;padding:10px 0;border-bottom:dashed 1.6px #8299b070;padding-left: 15px;  width: 57% !important;">
+                        <ul style="margin: 0;padding: 0 13px !important;">';
+                        
+                    // --- ADD TRAIN INFO AT THE TOP OF THE ACTIVITY LIST ---
+                    if (isset($train_by_day[$i])) {
+                        $train = $train_by_day[$i];
+                        $depart = $train['train_depart'] ?? '';
+                        $arrive = $train['train_arrive'] ?? '';
+                        $type = $train['type'] ?? '';
+                        $type_label = ucwords(str_replace('_', ' ', $type));
+                        // You can also add train name if you fetch it from DB, but for simplicity:
+                        $train_info = "Train transfer: Departure $depart → Arrival $arrive ($type_label)";
+                        $only_itinerary_html .= '<strong>' . htmlspecialchars($train_info) . '</strong>';
+                    }
+                    // --- END TRAIN INFO ---
+                    
+                     if (isset($route_by_day[$i])) {
+
+                        foreach ($route_by_day[$i] as $route) {
+
+                            $from   = $route['from_city'] ?? '';
+                            $to     = $route['to_city'] ?? '';
+                            $depart = $route['train_depart'] ?? '';
+                            $arrive = $route['train_arrive'] ?? '';
+                            $type   = $route['ticket_type'] ?? '';
+
+                            $type_label = ucwords(str_replace('_', ' ', $type));
+
+                            // Build timing text
+                            $time_text = '';
+
+                            if ($depart && $arrive) {
+                                $time_text = "Departure- $depart → Arrival- $arrive";
+                            } elseif ($depart) {
+                                $time_text = "Departure- $depart";
+                            } elseif ($arrive) {
+                                $time_text = "Arrival- $arrive";
+                            }
+
+                            // Final text
+                            $train_info = "Train Transfer: $from → $to ($time_text) ($type_label)";
+
+                            $only_itinerary_html .= '<br><strong>' . htmlspecialchars($train_info) . '</strong>';
+                        }
+                    }
+
+            // if ($has_only_miscellaneous && $i != 1 && $i != $cnt) {
+            //     $has_service = true;
+            //     $day_has_service = true;
+                
+            //     for ($j = 0; $j < $cnt_text; $j++) {
+            //         // if ($i == $cnt && $j == 0) {
+            //         //     continue;
+            //         // }
+                    
+            //         $site_id = $this->input->post('itinerary_sites_id_'.$i)[$j] ?? '';
+            //         $site_category = $this->getSiteCategory($site_id);
+                    
+            //         if ($site_category == 'miscellaneous') {
+            //             $ticket_name = $this->input->post('itinerary_entry_ticket_' . $i)[$j] ?? '';
+            //             if (!empty($ticket_name)) {
+            //                 $all_ticket_names[] = $ticket_name;
+            //                 $ticket_names_by_day[$i][] = $ticket_name;
+            //             }
+            //             $t = ($this->input->post('itinerary_time_' . $i)[$j] != '') 
+            //                 ? '(' . $this->input->post('itinerary_time_' . $i)[$j] . ') ' 
+            //                 : '';
+
+            //             $title = trim($this->input->post('itinerary_title_search_' . $i)[$j] ?? '');
+
+            //             $plain_title = trim(strip_tags(html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            //             $plain_title = str_replace(['–', '—', 'тАУ'], '-', $plain_title);
+                        
+            //             if (stripos($plain_title, "It's time to say good-bye to this beautiful city") !== false) {
+            //                 continue;
+            //             }
+                        
+            //             if (stripos($plain_title, 'Welcome to Almaty') !== false) {
+            //                 $only_itinerary_html .= '<li class="ssssss"><strong><em>Welcome to Almaty – City of a thousand colours!</em></strong></li>';
+            //             } elseif (stripos($plain_title, 'Welcome to Tbilisi') !== false) {
+            //                 $only_itinerary_html .= '<li class="ssssss">Welcome to Tbilisi</li>';
+            //             } elseif (stripos($plain_title, 'Welcome to Tashkent') !== false) {
+            //                 $only_itinerary_html .= '<li class="ssssss">Welcome to Tashkent – The Cultural Crossroads of Uzbekistan</li>';
+            //             } elseif (stripos($plain_title, 'Welcome to Baku') !== false) {
+            //                 $only_itinerary_html .= '<li class="ssssss">Welcome to Baku – A City of Ancient Charm & Modern Marvel</li>';
+            //             } else {
+            //                 $clean_title = strip_tags(html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8'), '<strong><b><em><i><br>');
+            //                 $only_itinerary_html .= '<li class="ssssss">' . $clean_title . '</li>';
+            //             }
+            //         }
+            //     }
+
+            //     $only_itinerary_html .= '<li>No service <br>Today is a free and easy day at your disposal</li>';
+
+            //     if (!empty($this->input->post('itinerary_activities_'.$i))) {
+            //         foreach ($this->input->post('itinerary_activities_'.$i) as $activity) {
+            //             if ($activity != "") {
+            //                 $activites .= '<li style="margin-left:0px;color:#555555;margin-bottom:6px;">' . $activity . '</li>';
+            //                 // $only_itinerary_html .= '<li style="margin-left:0px;">' . $activity . '</li>';
+            //             }
+            //         }
+            //     }
+            // } 
+            // else if ($cnt_text > 0 && $has_non_miscellaneous) {
+            //     $has_service = true;
+            //     $day_has_service = true;
+                
+            //     for ($j = 0; $j < $cnt_text; $j++) {
+            //         // if ($i == $cnt && $j == 0) {
+            //         //     continue;
+            //         // }
+            //         $ticket_name = $this->input->post('itinerary_entry_ticket_' . $i)[$j] ?? '';
+            //         if (!empty($ticket_name)) {
+            //             $all_ticket_names[] = $ticket_name;
+            //             $ticket_names_by_day[$i][] = $ticket_name;
+            //         }
+            //         $t = ($this->input->post('itinerary_time_' . $i)[$j] != '') 
+            //             ? '(' . $this->input->post('itinerary_time_' . $i)[$j] . ') ' 
+            //             : '';
+
+            //         $title = trim($this->input->post('itinerary_title_search_' . $i)[$j] ?? '');
+
+            //         $plain_title = trim(strip_tags(html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            //         $plain_title = str_replace(['–', '—', 'тАУ'], '-', $plain_title);
+                    
+            //         if (stripos($plain_title, "It's time to say good-bye to this beautiful city") !== false) {
+            //             continue;
+            //         }
+                    
+            //         if (stripos($plain_title, 'Welcome to Almaty') !== false) {
+            //             $only_itinerary_html .= '<li class="ssssss"><strong><em>Welcome to Almaty – City of a thousand colours!</em></strong></li>';
+            //         } elseif (stripos($plain_title, 'Welcome to Tbilisi') !== false) {
+            //             $only_itinerary_html .= '<li class="ssssss">Welcome to Tbilisi</li>';
+            //         } elseif (stripos($plain_title, 'Welcome to Tashkent') !== false) {
+            //             $only_itinerary_html .= '<li class="ssssss">Welcome to Tashkent – The Cultural Crossroads of Uzbekistan</li>';
+            //         } elseif (stripos($plain_title, 'Welcome to Baku') !== false) {
+            //             $only_itinerary_html .= '<li class="ssssss">Welcome to Baku – A City of Ancient Charm & Modern Marvel</li>';
+            //         } else {
+            //             $clean_title = strip_tags(html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8'), '<strong><b><em><i><br>');
+            //             $only_itinerary_html .= '<li class="ssssss">' . $clean_title . '</li>';
+            //         }
+            //     }
+
+            //     if (!empty($this->input->post('itinerary_activities_'.$i))) {
+            //         foreach ($this->input->post('itinerary_activities_'.$i) as $activity) {
+            //             if ($activity != "") {
+            //                 $has_service = true;
+            //                 $day_has_service = true;
+            //                 $activites .= '<li style="margin-left:0px;color:#555555;margin-bottom:6px;">' . $activity . '</li>';
+            //                 // $only_itinerary_html .= '<li style="margin-left:0px;">' . $activity . '</li>';
+            //             }
+            //         }
+            //     }
+            // } 
+            // else {
+            //     $only_itinerary_html .= '<li>No service <br>Today is a free and easy day at your disposal</li>';
+            // }
+            if ($has_only_miscellaneous && $i != $cnt) {
+
+    $has_service = true;
+    $day_has_service = true;
+
+    for ($j = 0; $j < $cnt_text; $j++) {
+
+        $site_id = $this->input->post('itinerary_sites_id_'.$i)[$j] ?? '';
+        $site_category = $this->getSiteCategory($site_id);
+
+        if ($site_category == 'miscellaneous') {
+
+            $ticket_name = $this->input->post('itinerary_entry_ticket_' . $i)[$j] ?? '';
+
+            if (!empty($ticket_name)) {
+                $all_ticket_names[] = $ticket_name;
+                $ticket_names_by_day[$i][] = $ticket_name;
+            }
+
+            $t = ($this->input->post('itinerary_time_' . $i)[$j] != '')
+                ? '(' . $this->input->post('itinerary_time_' . $i)[$j] . ') '
+                : '';
+
+            $title = trim(
+                $this->input->post('itinerary_title_search_' . $i)[$j] ?? ''
+            );
+
+            $plain_title = trim(
+                strip_tags(
+                    html_entity_decode(
+                        $title,
+                        ENT_QUOTES | ENT_HTML5,
+                        'UTF-8'
+                    )
+                )
+            );
+
+            $plain_title = str_replace(
+                ['–', '—', 'тАУ'],
+                '-',
+                $plain_title
+            );
+
+            // Skip goodbye text
+            if (
+                stripos(
+                    $plain_title,
+                    "It's time to say good-bye to this beautiful city"
+                ) !== false
+            ) {
+                continue;
+            }
+
+            // Welcome messages
+            if (stripos($plain_title, 'Welcome to Almaty') !== false) {
+
+                $only_itinerary_html .=
+                    '<li class="ssssss"><strong><em>
+                    Welcome to Almaty – City of a thousand colours!
+                    </em></strong></li>';
+
+            } elseif (stripos($plain_title, 'Welcome to Tbilisi') !== false) {
+
+                $only_itinerary_html .=
+                    '<li class="ssssss">Welcome to Tbilisi</li>';
+
+            } elseif (stripos($plain_title, 'Welcome to Tashkent') !== false) {
+
+                $only_itinerary_html .=
+                    '<li class="ssssss">
+                    Welcome to Tashkent – The Cultural Crossroads of Uzbekistan
+                    </li>';
+
+            } elseif (stripos($plain_title, 'Welcome to Baku') !== false) {
+
+                $only_itinerary_html .=
+                    '<li class="ssssss">
+                    Welcome to Baku – A City of Ancient Charm & Modern Marvel
+                    </li>';
+
+            } else {
+
+                $clean_title = strip_tags(
+                    html_entity_decode(
+                        $title,
+                        ENT_QUOTES | ENT_HTML5,
+                        'UTF-8'
+                    ),
+                    '<strong><b><em><i><br>'
+                );
+
+                if (!empty($clean_title)) {
+                    $only_itinerary_html .=
+                        '<li class="ssssss">' .
+                        $clean_title .
+                        '</li>';
+                }
+            }
+        }
+    }
+
+    // Activities
+    if (!empty($this->input->post('itinerary_activities_'.$i))) {
+
+        foreach (
+            $this->input->post('itinerary_activities_'.$i)
+            as $activity
+        ) {
+
+            if ($activity != "") {
+
+                $activites .=
+                    '<li style="margin-left:0px;color:#555555;margin-bottom:6px;">'
+                    . $activity .
+                    '</li>';
+            }
+        }
+    }
+
+} else if ($cnt_text > 0 && $has_non_miscellaneous) {
+
+    $has_service = true;
+    $day_has_service = true;
+
+    for ($j = 0; $j < $cnt_text; $j++) {
+
+        $ticket_name =
+            $this->input->post('itinerary_entry_ticket_' . $i)[$j] ?? '';
+
+        if (!empty($ticket_name)) {
+            $all_ticket_names[] = $ticket_name;
+            $ticket_names_by_day[$i][] = $ticket_name;
+        }
+
+        $t = ($this->input->post('itinerary_time_' . $i)[$j] != '')
+            ? '(' . $this->input->post('itinerary_time_' . $i)[$j] . ') '
+            : '';
+
+        $title =
+            trim(
+                $this->input->post('itinerary_title_search_' . $i)[$j] ?? ''
+            );
+
+        $plain_title = trim(
+            strip_tags(
+                html_entity_decode(
+                    $title,
+                    ENT_QUOTES | ENT_HTML5,
+                    'UTF-8'
+                )
+            )
+        );
+
+        $plain_title = str_replace(
+            ['–', '—', 'тАУ'],
+            '-',
+            $plain_title
+        );
+
+        if (
+            stripos(
+                $plain_title,
+                "It's time to say good-bye to this beautiful city"
+            ) !== false
+        ) {
+            continue;
+        }
+
+        if (stripos($plain_title, 'Welcome to Almaty') !== false) {
+
+            $only_itinerary_html .=
+                '<li class="ssssss"><strong><em>
+                Welcome to Almaty – City of a thousand colours!
+                </em></strong></li>';
+
+        } elseif (stripos($plain_title, 'Welcome to Tbilisi') !== false) {
+
+            $only_itinerary_html .=
+                '<li class="ssssss">Welcome to Tbilisi</li>';
+
+        } elseif (stripos($plain_title, 'Welcome to Tashkent') !== false) {
+
+            $only_itinerary_html .=
+                '<li class="ssssss">
+                Welcome to Tashkent – The Cultural Crossroads of Uzbekistan
+                </li>';
+
+        } elseif (stripos($plain_title, 'Welcome to Baku') !== false) {
+
+            $only_itinerary_html .=
+                '<li class="ssssss">
+                Welcome to Baku – A City of Ancient Charm & Modern Marvel
+                </li>';
+
+        } else {
+
+            $clean_title = strip_tags(
+                html_entity_decode(
+                    $title,
+                    ENT_QUOTES | ENT_HTML5,
+                    'UTF-8'
+                ),
+                '<strong><b><em><i><br>'
+            );
+
+            if (!empty($clean_title)) {
+                $only_itinerary_html .=
+                    '<li class="ssssss">' .
+                    $clean_title .
+                    '</li>';
+            }
+        }
+    }
+
+    if (!empty($this->input->post('itinerary_activities_'.$i))) {
+
+        foreach (
+            $this->input->post('itinerary_activities_'.$i)
+            as $activity
+        ) {
+
+            if ($activity != "") {
+
+                $has_service = true;
+                $day_has_service = true;
+
+                $activites .=
+                    '<li style="margin-left:0px;color:#555555;margin-bottom:6px;">'
+                    . $activity .
+                    '</li>';
+            }
+        }
+    }
+
+} else {
+
+    $only_itinerary_html .=
+        '<li>No service <br>
+        Today is a free and easy day at your disposal</li>';
+}
+            $only_itinerary_html .= '
+                        </ul>
+                    </td>';
+
+                if ($is_georgia) {
+
+                    $only_itinerary_html .= '
+                <td class="col-two" style="border-left: solid 1px #8299b0;border-bottom:dashed 1.6px #8299b070; padding-left: 15px; width: 25% !important;">
+                        <ul style="margin: 0;padding: 0 13px !important;">';
+                            
+            if ($i == 1 && $has_napkins) {  
+                $only_itinerary_html .= '<li>Refreshing napkins & chocolate inside the vehicle upon arrival</li>';
+            }
+            
+            if ($i == $cnt && $has_souvenir) {
+                $only_itinerary_html .= '<li>Departure Souvenir Gift</li>';
+            } 
+            else if ($has_only_miscellaneous && $i != 1 && $i != $cnt) {
+                $only_itinerary_html .= '<li>No vehicle No Guide</li>';
+            }
+            else if ($has_non_miscellaneous) {
+                if ($has_wifi) $only_itinerary_html .= '<li>Free Wifi</li>';
+            }
+            else if (!$day_has_service) {
+                $only_itinerary_html .= '<li>No vehicle No Guide</li>';
+            }
+                /* ADD THIS NEW BLOCK */
+                if (!empty($ticket_names_by_day[$i])) {
+                    foreach ($ticket_names_by_day[$i] as $ticket) {
+                        $clean_ticket = trim(explode('(', $ticket)[0]);
+                        $only_itinerary_html .= '<li>' . htmlspecialchars($clean_ticket) . '</li>';
+                    }
+                }
+                // For remark column тАУ use display version (without site name)
+                if (!empty($entrance_display_map[$i])) {
+                    foreach ($entrance_display_map[$i] as $entrance_name_only) {
+                        $only_itinerary_html .= '<li>' . htmlspecialchars($entrance_name_only) . '</li>';
+                    }
+                }
+
+                // For $day_wise_entrance тАУ use data version (with site name)
+                if (!empty($entrance_data_map[$i])) {
+                    foreach ($entrance_data_map[$i] as $entrance_name_with_site) {
+                        $day_wise_entrance .= '<li style="color:#555555;margin-bottom:6px;">' . htmlspecialchars($entrance_name_with_site) . '</li>';
+                    }
+                }
+                if (!empty($this->input->post('itinerary_activities_'.$i))) {
+                    foreach ($this->input->post('itinerary_activities_'.$i) as $activity) {
+                        if ($activity != "") {
+                            $only_itinerary_html .= '<li style="margin-left:0px;">' . $activity . '</li>';
+                        }
+                    }
+                }
+            $only_itinerary_html .= '</ul>
+                    </td>';
+        }else{
+             $only_itinerary_html .= '
+                <td class="col-two" style="border-left: solid 1px #8299b0; border-bottom: solid 1px #8299b0; padding-left: 15px; width: 25% !important;">
+                        <ul style="margin: 0;padding: 0 13px !important;">';
+
+                        /* ADD THIS NEW BLOCK */
+                if (!empty($ticket_names_by_day[$i])) {
+                    foreach ($ticket_names_by_day[$i] as $ticket) {
+                        $clean_ticket = trim(explode('(', $ticket)[0]);
+                        $only_itinerary_html .= '<li>' . htmlspecialchars($clean_ticket) . '</li>';
+                    }
+                }
+                // For remark column тАУ use display version (without site name)
+                if (!empty($entrance_display_map[$i])) {
+                    foreach ($entrance_display_map[$i] as $entrance_name_only) {
+                        $only_itinerary_html .= '<li>' . htmlspecialchars($entrance_name_only) . '</li>';
+                    }
+                }
+
+                // For $day_wise_entrance тАУ use data version (with site name)
+                if (!empty($entrance_data_map[$i])) {
+                    foreach ($entrance_data_map[$i] as $entrance_name_with_site) {
+                        $day_wise_entrance .= '<li style="color:#555555;margin-bottom:6px;">' . htmlspecialchars($entrance_name_with_site) . '</li>';
+                    }
+                }
+                if (!empty($this->input->post('itinerary_activities_'.$i))) {
+                    foreach ($this->input->post('itinerary_activities_'.$i) as $activity) {
+                        if ($activity != "") {
+                            $only_itinerary_html .= '<li style="margin-left:0px;">' . $activity . '</li>';
+                        }
+                    }
+                }
+
+            $only_itinerary_html .= '</ul>
+                    </td>';
+        }
+                $only_itinerary_html .= '</tr>';
+
+            $n++;
+            $daily_services[$i] = $day_has_service;
+
+            if (array_key_exists('hdn_transportation_outside_'.$i, $this->input->post())) {
+                $total_transportation_outside += $this->input->post('hdn_transportation_outside_'.$i);
+            }
+
+            if (array_key_exists('hdn_transportation_inside_'.$i, $this->input->post())) {
+                $total_transportation_inside += $this->input->post('hdn_transportation_inside_'.$i);
+            }
+        }
+
+        $only_itinerary_html .= '
+            </table>
+            </div>';
+       
+        $data['only_itinerary_html'] = $only_itinerary_html;
+        $data['activites'] = $activites;
+        $data['day_wise_entrance'] = $day_wise_entrance;
+        $data['itinerary_entry_ticket'] = $all_ticket_names;
+        $quote_id = isset($postData['quote_id']) ? (float)$postData['quote_id'] : 0;
+        $total_transportation = isset($postData['final_transport']) ? (float)$postData['final_transport'] : 0;
+        $discount_bundle_price = isset($postData['discount_bundle_price']) ? (float)$postData['discount_bundle_price'] : 0;
+        $total_transportation = $total_transportation - $discount_bundle_price;
+        $guide_grand_total = isset($postData['hdn_guide_grand_total']) ? (float)$postData['hdn_guide_grand_total'] : 0;
+        
+        $mandatory_grand_total = isset($postData['hdn_mandatory_grand_total']) ? (float)$postData['hdn_mandatory_grand_total'] : 0;
+        $child_mandatory_grand_total = isset($postData['child_mandatory_grand_total']) ? (float)$postData['child_mandatory_grand_total'] : 0;
+
+        $all_day_activities_total = isset($postData['all_day_activities_total']) ? (float)$postData['all_day_activities_total'] : 0;
+        $final_ticket_price = isset($postData['hdn_final_ticket_price']) ? (float)$postData['hdn_final_ticket_price'] : 0;
+        // print_r($final_ticket_price);
+        $all_day_child_activities_total = isset($postData['all_day_child_activities_total']) ? (float)$postData['all_day_child_activities_total'] : 0;
+        $activities_group_total = $postData['hdn_group_activity_total'] ?? '';
+        $hdn_final_child_ticket_price = isset($postData['hdn_final_child_ticket_price']) ? (float)$postData['hdn_final_child_ticket_price'] : 0;
+        $hdn_final_group_ticket_price = isset($postData['hdn_final_group_ticket_price']) ? (float)$postData['hdn_final_group_ticket_price'] : 0;
+        $final_toll_price = isset($postData['final_toll_price']) ? (float)$postData['final_toll_price'] : 0;
+        $grandTotalMeal = isset($postData['grandTotalMeal']) ? (float)$postData['grandTotalMeal'] : 0;
+        $childMealCost = isset($postData['childMealCost']) ? (float)$postData['childMealCost'] : 0;
+        
+        $entrance_group_total = isset($postData['entrance_group_total']) ? (float)$postData['entrance_group_total'] : 0;
+        $entrance_adult_total = isset($postData['entrance_adult_total']) ? (float)$postData['entrance_adult_total'] : 0;
+        $entrance_child_total = isset($postData['entrance_child_total']) ? (float)$postData['entrance_child_total'] : 0;
+
+        $meal_type_daywise_price = isset($postData['meal_type_daywise_price']) ? $postData['meal_type_daywise_price'] :'';
+        $fremark = isset($postData['fremark']) ? $postData['fremark'] :'';
+        $early_checkin = isset($postData['early_checkin']) ? $postData['early_checkin'] :'no';
+        $guideyes = isset($postData['guideyes']) ? $postData['guideyes'] :'no';
+        $luggage_vehicle = isset($postData['luggage_vehicle']) ? $postData['luggage_vehicle'] :'';
+
+        // Hotel related data
+        $hotel_names_category_wise = isset($postData['hotel_names_category_wise']) ? json_decode($postData['hotel_names_category_wise'], true) : [];
+        // Hotel Adult costing related data
+        $hotel_costing_category_wise = isset($postData['hotel_costing_category_wise']) ? json_decode($postData['hotel_costing_category_wise'], true) : [];
+        // Hotel child costing related data
+        // $hotel_costing_category_wise_child = isset($postData['hotel_costing_category_wise_child']) ? json_decode($postData['hotel_costing_category_wise_child'], true) : [];
+        $hotel_costing_category_wise_child = isset($postData['hotel_cnb_per_person']) ? json_decode($postData['hotel_cnb_per_person'], true) : [];
+        $hotel_costing_category_wise_child_cwb = isset($postData['hotel_cwb_per_person']) ? json_decode($postData['hotel_cwb_per_person'], true) : [];
+        $hotel_room_category_names_wise = isset($postData['hotel_room_category_names_wise']) ? json_decode($postData['hotel_room_category_names_wise'], true) : [];
+
+        $markup_percentage = isset($postData['markup_percentage']) ? (float)$postData['markup_percentage'] : 0;
+        $hotel_markup_percentage = isset($postData['hotel_markup_percentage']) ? $postData['hotel_markup_percentage'] : '';
+        $train_child_price = isset($postData['train_child_price']) ? (float)$postData['train_child_price'] : 0;
+        $train_adult_price = isset($postData['train_adult_price']) ? (float)$postData['train_adult_price'] : 0;
+
+        $driver_grand_total = isset($postData['driver_grand_total']) ? (float)$postData['driver_grand_total'] : 0;
+        
+        $group_type = isset($postData['hdn_group_type']) ? $postData['hdn_group_type'] : 'individual';
+
+        $cost_html = '';
+        $nights = isset($postData['hotel_nights']) ? (int)$postData['hotel_nights'] : 0;
+        $enquiry_id = $postData['enquiry_id'];
+
+        // print_r($hdn_final_child_ticket_price);
+        // === FAMILY GROUP TYPE ===
+        if($this->input->post('hotel_status')=="yes"){
+            if ($group_type == 'family') {
+                $cost_html .= $this->generate_family_cost_table(
+                    $hotel_names_category_wise,
+                    $hotel_costing_category_wise,
+                    $hotel_room_category_names_wise,
+                    $total_persons,
+                    $total_transportation,
+                    $guide_grand_total,
+                    $mandatory_grand_total,
+                    $all_day_activities_total,
+                    $final_ticket_price,
+                    $markup_percentage,
+                    $currency,
+                    $nights,
+                    $hotel_markup_percentage,
+                    $grandTotalMeal,
+                    $hdn_final_group_ticket_price,
+                    $hotel_costing_category_wise_child,
+                    $all_day_child_activities_total,
+                    $hdn_final_child_ticket_price,
+                    $total_child_persons,
+                    $hotel_costing_category_wise_child_cwb
+                );
+            }
+            // === INDIVIDUAL GROUP TYPE ===
+            else {
+                $cost_html .= $this->generate_individual_cost_table(
+                    $hotel_costing_category_wise,
+                    $total_persons,
+                    $total_transportation,
+                    $guide_grand_total,
+                    $mandatory_grand_total,
+                    $all_day_activities_total,
+                    $final_ticket_price,
+                    $markup_percentage,
+                    $currency,
+                    $nights,
+                    $hotel_markup_percentage,
+                    $grandTotalMeal,
+                    $hdn_final_group_ticket_price,
+                    $all_day_child_activities_total,
+                    $activities_group_total,
+                    $hdn_final_child_ticket_price,
+                    $total_child_persons,
+                    $early_checkin,
+                    $reduced_margins, 
+                    $reduced_land_margins,
+                    $entrance_group_total,
+                    $entrance_adult_total,
+                    $entrance_child_total,
+                    $train_adult_price,
+                    $train_child_price,
+                    $driver_grand_total,
+                    $child_mandatory_grand_total,
+                    $childMealCost,
+                    $enquiry_id,
+                    $postData['quotation_id'],
+                );
+                $full_cost_content = $cost_html;
+            }
+         }else{
+            
+            $grand_total_other = $total_transportation + $guide_grand_total + $all_day_activities_total + $mandatory_grand_total + $final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price + $entrance_adult_total + $entrance_group_total + $train_adult_price + $driver_grand_total  + $activities_group_total;
+            $markup_percentage = floatval($this->input->post('markup_percentage'));
+            $grand_total_other += ($grand_total_other * ($markup_percentage / 100));
+            $converted_other = ($currency > 0) 
+                ? round(($grand_total_other / $total_persons) / $currency) 
+                : 0;
+            $land_adult_reduced = 0;
+                foreach ($reduced_land_margins as $margin) {
+                    if ($margin['type'] == 'land_adult') {
+                        $land_adult_reduced = floatval($margin['value']);
+                        break;
+                    }
+                }    
+            $converted_other -= $land_adult_reduced;    
+                $cost_html .= '<table border="1" cellpadding="5" cellspacing="0" style="border:2px solid black !important;border-collapse: collapse; width:100%; text-align: left;">';
+            $cost_html .= '<tr>
+                <td style="background-color:#d6d8d9;color:red;width:50%;">Land Package Cost Per Person</td>
+                <td style="background-color:#d6d8d9;color:red;width:50%;"> $'.$converted_other.'</td>
+            </tr>';
+             if($total_child_persons > 0){
+                    $grand_total_other_child = $all_day_child_activities_total + $hdn_final_child_ticket_price + $entrance_child_total + $train_child_price + $child_mandatory_grand_total + $childMealCost;
+                    $markup_percentage = floatval($this->input->post('markup_percentage'));
+                    $grand_total_other_child += ($grand_total_other_child * ($markup_percentage / 100));
+                    $converted_other = ($currency > 0) 
+                        ? round(($grand_total_other_child / $total_child_persons) / $currency) 
+                        : 0;
+                        
+                    $land_child_reduced = 0;
+                    foreach ($reduced_land_margins as $margin) {
+                        if ($margin['type'] == 'land_child') {
+                            $land_child_reduced = floatval($margin['value']);
+                            break;
+                        }
+                    }
+                    $converted_other -= $land_child_reduced;            
+                    $cost_html .= '<tr>
+                        <td style="background-color:#d6d8d9;color:red;width:50%;">Land Package Cost Per Child</td>
+                        <td style="background-color:#d6d8d9;color:red;width:50%;"> $'.$converted_other.'</td>
+                    </tr>';    
+                }
+            $cost_html .= '</table>';
+            $full_cost_content = $cost_html;
+        }
+        $itinerary_html = $only_itinerary_html;
+        
+        if (!empty($quote_id)) {
+            $this->save_full_cost_html($quote_id, $full_cost_content, $itinerary_html);
+        }
+        $vehicles_with_name = [];
+
+        if (!empty($vehicless_arr)) {
+            foreach ($vehicless_arr as $veh) {
+                $vehicle_id = $veh['vehicle_id'];
+                $qnty = $veh['qnty'];
+
+                if (!empty($vehicle_id)) {
+                    $query = $this->db->select('vehicle_name')
+                                    ->from('transportation')
+                                    ->where('id', $vehicle_id)
+                                    ->get();
+
+                    if ($query && $query->num_rows() > 0) {
+                        $vehicle = $query->row();
+                        $vehicles_with_name[] = [
+                            $vehicle_name = $vehicle->vehicle_name,
+                        ];
+                    } else {
+                        // Fallback if vehicle not found
+                        $vehicles_with_name[] = [
+                            $vehicle_name ='',
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Now $vehicles_with_name contains vehicle names and quantities
+        foreach ($vehicles_with_name as $v) {
+            $data['vehicle_name']=$vehicle_name;
+        }
+
+        $data['cost_html'] = $cost_html;
+        $data['postData'] = $postData;
+        // Load the email body view
+        $this->load->view('admin/email_body', $data);
+    }
+    private function getSiteCategory($site_id) {
+        $this->db->select('category');
+        $this->db->from('sites');
+        $this->db->where('id', $site_id);
+        $result = $this->db->get()->row();
+        
+        return $result ? $result->category : 'miscellaneous';
+    }
+
+    private function generate_family_cost_table($hotel_names_category_wise, $hotel_costing_category_wise, $hotel_room_category_names_wise, $total_persons, $total_transportation, $guide_grand_total, $hdn_mandatory_grand_total, $all_day_activities_total, $hdn_final_ticket_price, $markup_percentage, $currency, $nights, $hotel_markup_percentage, $grandTotalMeal, $hdn_final_group_ticket_price, $hotel_costing_category_wise_child, $all_day_child_activities_total, $hdn_final_child_ticket_price, $total_child_persons, $hotel_costing_category_wise_child_cwb)
+    {
+    
+        $has_any_night = false;
+        foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+            foreach ($hotels as $hotelId => $hotelData) {
+                if (!empty($hotelData['nights'])) {
+                    // Check if any night > 0
+                    $filtered_nights = array_filter($hotelData['nights'], fn($v) => $v > 0);
+                    if (!empty($filtered_nights)) {
+                        $has_any_night = true;
+                        break 2; // exit both loops
+                    }
+                }
+            }
+        }
+        $cost_html = '';
+        if (!$has_any_night) {
+        $cost_html .= '<table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width:100%; text-align: left;">';
+
+        $cost_html .= '<tr><th style="background-color: #d6d8d9;">Rating</th>';
+        foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+            $room_cat_list = $hotel_room_category_names_wise[$rating_key] ?? [];
+            $colspan = max(count($hotels), 1); 
+            $rating_display = ucwords(str_replace('_', ' ', $rating_key));
+
+            $cost_html .= '<th colspan="' . $colspan . '" style="background-color: #d6d8d9;">' . $rating_display . '</th>';
+        }
+        $cost_html .= '</tr>';
+
+        $cost_html .= '<tr><th style="background-color: #d6d8d9;">Hotel</th>';
+        foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+            foreach ($hotels as $hotelId => $hotelData) {
+                $hotel_name = $hotelData['hotel_name'] ?? '-';
+                // $nights = isset($hotelData['nights']) ? ' (' . $hotelData['nights'] . 'N)' : '';
+                $nights_value = '';
+                if (!empty($hotelData['nights'])) {
+                    $nights_value = is_array($hotelData['nights']) 
+                        ? implode(',', array_filter($hotelData['nights'])) 
+                        : $hotelData['nights'];
+                        $nights = ' (' . $nights_value . ' N)';
+                } else {
+                    $nights = '';
+                }
+                
+                $cost_html .= '<td style="background-color: #d6d8d9;font-weight:bold;color:#6060a9;">' . $hotel_name . $nights . '</td>';
+            }
+        }
+        $cost_html .= '</tr>';
+        $cost_html .= '<tr><th style="background-color: #d6d8d9;">Room Category</th>';
+        foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+            foreach ($hotels as $hotelId => $hotelName) {
+                $room_categories = $hotel_room_category_names_wise[$rating_key][$hotelId] ?? [];
+                if (!empty($room_categories)) {
+                    $cost_html .= '<td style="background-color: #d6d8d9;">' . implode('<br>', $room_categories) . '</td>';
+                } else {
+                    $cost_html .= '<td style="background-color: #d6d8d9;">-</td>';
+                }
+            }
+        }
+        $cost_html .= '</tr>';
+        $label = ($nights == '') ? "Cost Per Person" : "Hotel Cost Per Person";
+        $cost_html .= '<tr><th style="background-color: #d6d8d9;">'. $label .'</th>';
+        // $cost_html .= '<tr><th style="background-color: #90e0ef;">Cost Per Person</th>';
+        foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+            foreach ($hotels as $hotelId => $hotelName) {
+                $hotel_cost = $hotel_costing_category_wise[$rating_key][$hotelId] ?? 0;
+
+                $markup_percentage = floatval($this->input->post('markup_percentage'));
+                $hotel_markup_percentage = floatval($this->input->post('hotel_markup_percentage'));
+                if(!empty($hotel_markup_percentage))
+                {
+                    $hotel_cost += ($hotel_cost * ($hotel_markup_percentage / 100));
+                    
+                }else{
+                    $hotel_cost += ($hotel_cost * ($markup_percentage / 100));
+                }
+
+                if($nights =='')
+                {
+                    $grand_total = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price;
+                    $grand_total += ($grand_total * ($markup_percentage / 100));
+                }
+                else{
+                    $grand_total = $hotel_cost;
+                }
+                
+                // $markup_percentage = floatval($this->input->post('markup_percentage'));
+                // $grand_total += ($grand_total * ($markup_percentage / 100));
+                $grand_total_new = $hotel_cost;
+                if(empty($hotel_markup_percentage))
+                    {
+                        $grand_total_new += $grand_total;
+                    };
+
+                $per_person_cost = ($total_persons > 0 && $currency > 0)
+                    ? round(($grand_total_new / $total_persons) / $currency)
+                    : 0;
+
+                $cost_html .= '<td style="background-color: #d6d8d9;">$' . $per_person_cost . '</td>';
+            }
+        }
+        $cost_html .= '</tr>';
+        
+        // Add Child Cost Per Person row if child data exists
+        $has_child_data = false;
+        foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+            foreach ($hotels as $hotelId => $hotelName) {
+                // Check if the key exists (not using ?? 0) to distinguish between null and 0
+                $child_cost_exists = isset($hotel_costing_category_wise_child[$rating_key][$hotelId]);                
+                if ($child_cost_exists) {
+                    $has_child_data = true;
+                    break 2;
+                }
+            }
+        }
+
+        if ($has_child_data) 
+        {
+            $cost_html .= '<tr><th style="background-color: #d6d8d9; color: black;">Cost CNB Per Child</th>';
+            foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotelId => $hotelName) {
+                    // Check if CNB cost exists for this hotel
+                    $child_cost_exists = isset($hotel_costing_category_wise_child[$rating_key][$hotelId]);
+                    
+                    if ($child_cost_exists) {
+                        $child_cost = $hotel_costing_category_wise_child[$rating_key][$hotelId];
+                        
+                        $markup_percentage = floatval($this->input->post('markup_percentage'));
+                        $hotel_markup_percentage = floatval($this->input->post('hotel_markup_percentage'));
+                        
+                        if(!empty($hotel_markup_percentage)) {
+                            $child_cost += ($child_cost * ($hotel_markup_percentage / 100));
+                        } else {
+                            $child_cost += ($child_cost * ($markup_percentage / 100));
+                        }
+
+                        $total_child_persons = $total_child_persons ?? $total_persons;
+                        if($nights == '') {
+                            // Use child-specific variables for child calculations
+                            $grand_total_child = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+                            $grand_total_child += ($grand_total_child * ($markup_percentage / 100));
+                            $grand_total_child = $grand_total_child / $total_child_persons;
+                        } else {
+                            $grand_total_child = $child_cost;
+                        }
+                        
+                        $grand_total_child_new = $child_cost;
+                        if(empty($hotel_markup_percentage)) {
+                            $grand_total_child_new += $grand_total_child;
+                        }
+
+                         // Fallback to total_persons if not provided
+                        $per_person_child_cost = ($total_child_persons > 0 && $currency > 0)
+                            ? round($grand_total_child_new  / $currency)
+                            : 0;
+
+                        $cost_html .= '<td style="background-color: #d6d8d9; color: black;">' . '$' . $per_person_child_cost . '</td>';
+                    } else {
+                        // Show dash for hotels without CNB data
+                        $cost_html .= '<td style="background-color: #d6d8d9; color: black;">-</td>';
+                    }
+                }
+            }
+            $cost_html .= '</tr>';
+        }
+        $has_child_data_cwb= false;
+        foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+            foreach ($hotels as $hotelId => $hotelName) {
+                // Check if the key exists (not using ?? 0) to distinguish between null and 0
+                $child_costc_cwb_exists = isset($hotel_costing_category_wise_child_cwb[$rating_key][$hotelId]);
+                if ($child_costc_cwb_exists) {
+                    $has_child_data_cwb = true;
+                    break 2;
+                }
+            }
+        }
+        if($has_child_data_cwb)
+        {
+            $cost_html .= '<tr><th style="background-color: #d6d8d9; color: black;">Cost CWB Per Child</th>';
+            foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotelId => $hotelName) {
+                    // Check if CWB cost exists for this hotel
+                    $child_cost_cwb_exists = isset($hotel_costing_category_wise_child_cwb[$rating_key][$hotelId]);
+                    
+                    if ($child_cost_cwb_exists) {
+                        $child_cost_cwb = $hotel_costing_category_wise_child_cwb[$rating_key][$hotelId];
+                        
+                        $markup_percentage = floatval($this->input->post('markup_percentage'));
+                        $hotel_markup_percentage = floatval($this->input->post('hotel_markup_percentage'));
+                        
+                        if(!empty($hotel_markup_percentage)) {
+                            $child_cost_cwb += ($child_cost_cwb * ($hotel_markup_percentage / 100));
+                        } else {
+                            $child_cost_cwb += ($child_cost_cwb * ($markup_percentage / 100));
+                        }
+
+                        $total_child_persons = $total_child_persons ?? $total_persons;
+                        if($nights == '') {
+                            // Use child-specific variables for child calculations
+                            $grand_total_child = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+                            $grand_total_child += ($grand_total_child * ($markup_percentage / 100));
+                            $grand_total_child = $grand_total_child / $total_child_persons;
+                        } else {
+                            $grand_total_child = $child_cost_cwb;
+                        }
+                        
+                        $grand_total_child_new_cwb = $child_cost_cwb;
+                        if(empty($hotel_markup_percentage)) {
+                            $grand_total_child_new_cwb += $grand_total_child;
+                        }
+
+                        // Use total_child_persons for child calculations
+                         // Fallback to total_persons if not provided
+                        $per_person_child_cost_cwb = ($total_child_persons > 0 && $currency > 0)
+                            ? round($grand_total_child_new_cwb /$currency)
+                            : 0;
+
+                        $cost_html .= '<td style="background-color: #d6d8d9; color: black;">' . '$' . $per_person_child_cost_cwb . '</td>';
+                    } else {
+                        // Show dash for hotels without CWB data
+                        $cost_html .= '<td style="background-color: #d6d8d9; color: black;">-</td>';
+                    }
+                }
+            }
+            $cost_html .= '</tr>';
+        }
+        if(!empty($hotel_markup_percentage))
+        {
+            $total_cols = 0;
+            foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotelData) {
+                    if (isset($hotelData['nights']) && $hotelData['nights'] > 0) {
+                        $total_cols++;
+                    }
+                }
+            }
+            $grand_total_other = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price;
+            $markup_percentage = floatval($this->input->post('markup_percentage'));
+            $grand_total_other += ($grand_total_other * ($markup_percentage / 100));
+            $converted_other = ($currency > 0) 
+                ? round(($grand_total_other / $total_persons) / $currency) 
+                : 0;
+            $cost_html .= '<tr>
+                <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Person</th>
+                <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other.'</td>
+            </tr>';
+
+            $grand_total_child_other = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+            $markup_percentage = floatval($this->input->post('markup_percentage'));
+            $grand_total_child_other += ($grand_total_child_other * ($markup_percentage / 100));
+            $converted_other_child = ($currency > 0) 
+                ? round(($grand_total_child_other / $total_child_persons) / $currency) 
+                : 0;
+            $cost_html .= '<tr>
+                <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Child</th>
+                <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other_child.'</td>
+            </tr>';
+
+        }
+        $cost_html .= '</table>';
+        }   
+
+        if ($has_any_night) {
+            $markup_percentage = floatval($this->input->post('markup_percentage'));
+            $packages = [];
+            $package_index = 1;
+
+            $all_available_nights = [];
+            foreach ($hotel_names_category_wise as $rating => $hotels) {
+                foreach ($hotels as $hotel_data) {
+                    if (isset($hotel_data['nights']) && !empty($hotel_data['nights']) && is_array($hotel_data['nights'])) {
+                        $all_available_nights = array_merge($all_available_nights, $hotel_data['nights']);
+                    }
+                }
+            }
+            $all_available_nights = array_unique($all_available_nights);
+            sort($all_available_nights);
+            
+            $final_nights_order = [];
+            if (in_array(0, $all_available_nights)) {
+                $final_nights_order[] = 0; 
+            }
+            
+            foreach ($all_available_nights as $night) {
+                if ($night != 0) {
+                    $final_nights_order[] = $night;
+                }
+            }
+            
+            $all_available_nights = $final_nights_order;
+
+            $main_hotels = [];
+            foreach ($hotel_names_category_wise as $rating => $hotels) {
+                foreach ($hotels as $hotel_id => $hotel_data) {
+                    if (!isset($hotel_data['nights']) || empty($hotel_data['nights'])) {
+                        $hotel_data['nights'] = $all_available_nights;
+                    }
+                    
+                    $available_nights_count = count($hotel_data['nights']);
+                    if ($available_nights_count >= 2) {
+                        $main_hotels[] = [
+                            'hotel_id' => $hotel_id,
+                            'hotel_data' => $hotel_data,
+                            'rating' => $rating
+                        ];
+                    }
+                }
+            }
+
+            $package_signatures = [];
+            $used_fallback_hotels = []; 
+
+            foreach ($main_hotels as $main_hotel_info) {
+                $hotel_id = $main_hotel_info['hotel_id'];
+                $hotel_data = $main_hotel_info['hotel_data'];
+                $rating = $main_hotel_info['rating'];
+
+                $total_hotel_cost = floatval($hotel_costing_category_wise[$rating][$hotel_id] ?? 0);
+                $total_child_cost_cnb = floatval($hotel_costing_category_wise_child[$rating][$hotel_id] ?? 0);
+                $total_child_cost_cwb = floatval($hotel_costing_category_wise_child_cwb[$rating][$hotel_id] ?? 0);
+                
+                $nights_array = isset($hotel_data['nights']) ? $hotel_data['nights'] : $all_available_nights;
+                $nights_count = count($nights_array);
+                $per_night_cost = $total_hotel_cost / max($nights_count, 1);
+                $per_night_child_cost_cnb = $total_child_cost_cnb / max($nights_count, 1);
+                $per_night_child_cost_cwb = $total_child_cost_cwb / max($nights_count, 1);
+
+                $package_hotels = [];
+                $package_child_hotels_cnb = [];
+                $package_child_hotels_cwb = [];
+                $total_package_cost = 0;
+                $total_package_child_cost_cnb = 0;
+                $total_package_child_cost_cwb = 0;
+                $fallback_hotels_used = [];
+                $fallback_child_hotels_used_cnb = [];
+                $fallback_child_hotels_used_cwb = [];
+                $hotel_markup_percentage = floatval($this->input->post('hotel_markup_percentage'));
+                
+                foreach ($all_available_nights as $night_no) {
+                    if (in_array($night_no, $nights_array)) 
+                    {
+                        // Adult cost calculation
+                        $per_person = ($total_persons > 0 && $currency > 0)
+                            ? ($per_night_cost / $total_persons) / $currency
+                            : 0;
+                        
+                        if(!empty($hotel_markup_percentage)) {
+                            $per_person += ($per_person * ($hotel_markup_percentage / 100));
+                        } else {
+                            $per_person += ($per_person * ($markup_percentage / 100));
+                        }
+
+                        $package_hotels[] = [
+                            'name' => $hotel_data['hotel_name'],
+                            'rating' => $rating,
+                            'night' => $night_no,
+                            'cost_per_person' => round($per_person),
+                            'type' => 'same_hotel'
+                        ];
+                        
+                        $total_package_cost += $per_person;
+
+                        // Child CNB cost calculation
+                        // Child CNB cost calculation - only if cost exists
+                        $per_person_child_cnb = '';
+                        if (isset($hotel_costing_category_wise_child[$rating][$hotel_id])) 
+                        {
+                            $total_child_cost_cnb = floatval($hotel_costing_category_wise_child[$rating][$hotel_id] ?? 0);
+                            $total_child_persons = $total_child_persons ?? $total_persons;
+                            $per_person_child_cnb = ($total_child_persons > 0 && $currency > 0)
+                                ? ($per_night_child_cost_cnb / $currency)
+                                : 0;
+                            
+                            if(!empty($hotel_markup_percentage)) {
+                                $per_person_child_cnb += ($per_person_child_cnb * ($hotel_markup_percentage / 100));
+                            } else {
+                                $per_person_child_cnb += ($per_person_child_cnb * ($markup_percentage / 100));
+                            }
+                            $per_person_child_cnb = round($per_person_child_cnb);
+                        }
+
+                        $package_child_hotels_cnb[] = [
+                            'name' => $hotel_data['hotel_name'],
+                            'rating' => $rating,
+                            'night' => $night_no,
+                            'cost_per_person' => $per_person_child_cnb,
+                            'type' => 'same_hotel'
+                        ];
+
+                        // Only add to total if cost exists
+                        if ($total_child_cost_cnb > 0 && is_numeric($per_person_child_cnb)) {
+                            $total_package_child_cost_cnb += $per_person_child_cnb;
+                        }
+
+                        // Child CWB cost calculation
+                        // Child CWB cost calculation - only if cost exists
+                        $per_person_child_cwb = '';
+                        if (isset($hotel_costing_category_wise_child_cwb[$rating][$hotel_id])) {
+                            $total_child_cost_cwb = floatval($hotel_costing_category_wise_child_cwb[$rating][$hotel_id] ?? 0);
+                            $per_person_child_cwb = ($total_child_persons > 0 && $currency > 0)
+                                ? ($per_night_child_cost_cwb / $currency )
+                                : 0;
+                            
+                            if(!empty($hotel_markup_percentage)) {
+                                $per_person_child_cwb += ($per_person_child_cwb * ($hotel_markup_percentage / 100));
+                            } else {
+                                $per_person_child_cwb += ($per_person_child_cwb * ($markup_percentage / 100));
+                            }
+                            $per_person_child_cwb = round($per_person_child_cwb);
+                        }
+
+                        $package_child_hotels_cwb[] = [
+                            'name' => $hotel_data['hotel_name'],
+                            'rating' => $rating,
+                            'night' => $night_no,
+                            'cost_per_person' => $per_person_child_cwb,
+                            'type' => 'same_hotel'
+                        ];
+
+                        // Only add to total if cost exists
+                        if (isset($hotel_costing_category_wise_child_cwb[$rating][$hotel_id]) && is_numeric($per_person_child_cwb)) {
+                            $total_package_child_cost_cwb += $per_person_child_cwb;
+                        }
+                        
+                    } else {
+                        $fallback_hotel = $this->findFallbackHotel($hotel_names_category_wise, $hotel_costing_category_wise, $night_no, $rating, $hotel_data['hotel_name'], $total_persons, $currency, $markup_percentage, $used_fallback_hotels, $hotel_markup_percentage);
+                        
+                        // For child CNB fallback
+                        $total_child_persons = $total_child_persons ?? $total_persons;
+                        $fallback_child_hotel_cnb = $this->findFallbackHotel($hotel_names_category_wise, $hotel_costing_category_wise_child, $night_no, $rating, $hotel_data['hotel_name'], $total_child_persons, $currency, $markup_percentage, $used_fallback_hotels, $hotel_markup_percentage);
+                        
+                        // For child CWB fallback
+                        $fallback_child_hotel_cwb = $this->findFallbackHotel($hotel_names_category_wise, $hotel_costing_category_wise_child_cwb, $night_no, $rating, $hotel_data['hotel_name'], $total_child_persons, $currency, $markup_percentage, $used_fallback_hotels, $hotel_markup_percentage);
+                        
+                        $package_hotels[] = $fallback_hotel;
+                        $package_child_hotels_cnb[] = $fallback_child_hotel_cnb;
+                        $package_child_hotels_cwb[] = $fallback_child_hotel_cwb;
+                        
+                        $total_package_cost += $fallback_hotel['cost_per_person'];
+                        // $total_package_child_cost_cnb += $fallback_child_hotel_cnb['cost_per_person'];
+                        if (is_numeric($fallback_child_hotel_cnb['cost_per_person'])) {
+                            $total_package_child_cost_cnb += $fallback_child_hotel_cnb['cost_per_person'];
+                        }
+                        if (is_numeric($fallback_child_hotel_cwb['cost_per_person'])) {
+                            $total_package_child_cost_cwb += $fallback_child_hotel_cwb['cost_per_person'];
+                        }
+                        // $total_package_child_cost_cwb += $fallback_child_hotel_cwb['cost_per_person'];
+                        
+                        if ($fallback_hotel['type'] != 'same_hotel') {
+                            $fallback_hotels_used[] = $fallback_hotel['name'];
+                        }
+                        if ($fallback_child_hotel_cnb['type'] != 'same_hotel') {
+                            $fallback_child_hotels_used_cnb[] = $fallback_child_hotel_cnb['name'];
+                        }
+                        if ($fallback_child_hotel_cwb['type'] != 'same_hotel') {
+                            $fallback_child_hotels_used_cwb[] = $fallback_child_hotel_cwb['name'];
+                        }
+                    }
+                }
+
+                $grand_total_other = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price;
+                $grand_total_other += $grand_total_other * ($markup_percentage / 100);
+                $converted_other = ($currency > 0)
+                    ? round(($grand_total_other / $total_persons) / $currency, 2)
+                    : 0;
+
+                // For child land package cost
+                $grand_total_other_child = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+                $grand_total_other_child += $grand_total_other_child * ($markup_percentage / 100);
+                $total_child_persons = $total_child_persons ?? $total_persons;
+                $converted_other_child = ($currency > 0)
+                    ? round(($grand_total_other_child / $total_child_persons) / $currency, 2)
+                    : 0;
+
+                if(empty($hotel_markup_percentage)) {
+                    $total_package_cost += $converted_other;
+                    $total_package_child_cost_cnb += $converted_other_child;
+                    $total_package_child_cost_cwb += $converted_other_child;
+                }
+
+                $fallback_signature = implode('|', array_unique($fallback_hotels_used));
+                $package_signature = $hotel_data['hotel_name'] . "|" . $fallback_signature;
+
+                if (!in_array($package_signature, $package_signatures)) {
+                    $package_signatures[] = $package_signature;
+                    
+                    $packages[] = [
+                        'name' => 'Package ' . $package_index++,
+                        'primary_rating' => $rating,
+                        'main_hotel' => $hotel_data['hotel_name'],
+                        'fallback_hotels' => array_unique($fallback_hotels_used),
+                        'hotels' => $package_hotels,
+                        'child_hotels_cnb' => $package_child_hotels_cnb,
+                        'child_hotels_cwb' => $package_child_hotels_cwb,
+                        'total_cost' => round($total_package_cost),
+                        'total_child_cost_cnb' => ($total_package_child_cost_cnb > 0 && is_numeric($total_package_child_cost_cnb)) ? round($total_package_child_cost_cnb) : '',
+                        'total_child_cost_cwb' => ($total_package_child_cost_cwb > 0 && is_numeric($total_package_child_cost_cwb)) ? round($total_package_child_cost_cwb) : ''
+                    ];
+                }
+            }
+            
+            // ЁЯФ╣ Merge same hotel nights within each package for adults
+            foreach ($packages as &$pkg) {
+                $merged_hotels = [];
+                foreach ($pkg['hotels'] as $hotel) {
+                    $key = $hotel['name'] . '_' . $hotel['rating'];
+                    if (!isset($merged_hotels[$key])) {
+                        $merged_hotels[$key] = [
+                            'name' => $hotel['name'],
+                            'rating' => $hotel['rating'],
+                            'nights' => [],
+                            'cost_per_person' => $hotel['cost_per_person'],
+                            'type' => $hotel['type']
+                        ];
+                    }
+                    $merged_hotels[$key]['nights'][] = $hotel['night'];
+                }
+
+                foreach ($merged_hotels as &$h) {
+                    sort($h['nights']);
+                    $unique_nights = array_unique($h['nights']);
+                    $formatted_nights = array_map(fn($n) => ($n == 0 ? 'Early Check-in' : $n . 'N'), $unique_nights);
+
+                    $total_nights = count(array_filter($unique_nights, fn($n) => $n > 0));
+                    if (in_array(0, $unique_nights)) {
+                        $total_nights += 1; // count early check-in as 1N
+                    }
+
+                    $h['night'] = $total_nights ;
+                }
+
+                $pkg['hotels'] = array_values($merged_hotels);
+            }
+            
+            // ЁЯФ╣ Merge same hotel nights within each package for children CNB
+            foreach ($packages as &$pkg) {
+                $merged_child_hotels_cnb = [];
+                foreach ($pkg['child_hotels_cnb'] as $hotel) {
+                    $key = $hotel['name'] . '_' . $hotel['rating'];
+                    if (!isset($merged_child_hotels_cnb[$key])) {
+                        $merged_child_hotels_cnb[$key] = [
+                            'name' => $hotel['name'],
+                            'rating' => $hotel['rating'],
+                            'nights' => [],
+                            'cost_per_person' => $hotel['cost_per_person'],
+                            'type' => $hotel['type']
+                        ];
+                    }
+                    $merged_child_hotels_cnb[$key]['nights'][] = $hotel['night'];
+                }
+
+                foreach ($merged_child_hotels_cnb as &$h) {
+                    sort($h['nights']);
+                    $unique_nights = array_unique($h['nights']);
+                    $total_nights = count(array_filter($unique_nights, fn($n) => $n > 0));
+                    if (in_array(0, $unique_nights)) {
+                        $total_nights += 1;
+                    }
+                    $h['night'] = $total_nights;
+                }
+
+                $pkg['child_hotels_cnb'] = array_values($merged_child_hotels_cnb);
+            }
+
+            // ЁЯФ╣ Merge same hotel nights within each package for children CWB
+            foreach ($packages as &$pkg) {
+                $merged_child_hotels_cwb = [];
+                foreach ($pkg['child_hotels_cwb'] as $hotel) {
+                    $key = $hotel['name'] . '_' . $hotel['rating'];
+                    if (!isset($merged_child_hotels_cwb[$key])) {
+                        $merged_child_hotels_cwb[$key] = [
+                            'name' => $hotel['name'],
+                            'rating' => $hotel['rating'],
+                            'nights' => [],
+                            'cost_per_person' => $hotel['cost_per_person'],
+                            'type' => $hotel['type']
+                        ];
+                    }
+                    $merged_child_hotels_cwb[$key]['nights'][] = $hotel['night'];
+                }
+
+                foreach ($merged_child_hotels_cwb as &$h) {
+                    sort($h['nights']);
+                    $unique_nights = array_unique($h['nights']);
+                    $total_nights = count(array_filter($unique_nights, fn($n) => $n > 0));
+                    if (in_array(0, $unique_nights)) {
+                        $total_nights += 1;
+                    }
+                    $h['night'] = $total_nights;
+                }
+
+                $pkg['child_hotels_cwb'] = array_values($merged_child_hotels_cwb);
+            }
+            unset($pkg);
+            
+            if (!empty($packages)) {
+                $cost_html .= '<table border="1" cellpadding="6" cellspacing="0" style="width:100%; border-collapse:collapse; text-align:left;">';
+                $cost_html .= '<tr style="background-color: #d6d8d9; font-weight:bold;">
+                    <th>Package</th>
+                    <th>Hotel</th>
+                    <th>Rating</th>
+                    <th>No. of Nights</th>';
+                    if (!empty($hotel_markup_percentage)) {
+                            $cost_html .= '<th>Cost Per Person / Night</th>';
+                            $cost_html .= '<th>Cost CNB Per Child / Night</th>';
+                            $cost_html .= '<th>Cost CWB Per Child / Night</th>';
+                        } else {
+                            $cost_html .= '<th>Cost Per Person</th>';
+                            $cost_html .= '<th>Cost CNB Per Child</th>';
+                            $cost_html .= '<th>Cost CWB Per Child</th>';
+                        }
+                $cost_html .='</tr>';
+                
+                foreach ($packages as $pkg) {
+                    $rowspan = count($pkg['hotels']);
+                    $first_row = true;
+
+                    // Display Adult and Child costs in the same row
+                    foreach ($pkg['hotels'] as $index => $hotel) {
+                        $cost_html .= '<tr>';
+                        if ($first_row) {
+                            $cost_html .= '<td rowspan="' . $rowspan . '" style="font-weight:bold;background-color: #d6d8d9;">' . $pkg['name'] . '</td>';
+                            $first_row = false;
+                        }
+                        
+                        $hotel_bg_color = ($hotel['type'] == 'same_hotel') ? '#d6d8d9' : '#d6d8d9';
+                        $cost_html .= '<td style="font-weight:bold;color:#6060a9;background-color: ' . $hotel_bg_color . ';">' . $hotel['name'] . '</td>';
+                        $cost_html .= '<td style="background-color: ' . $hotel_bg_color . ';">' . str_replace('_', ' ', $hotel['rating']) . '</td>';
+                        $cost_html .= '<td style="background-color: ' . $hotel_bg_color . ';">' . $hotel['night'] . '</td>';
+                        
+                        // Adult cost column
+                        if(!empty($hotel_markup_percentage)) {
+                            $cost_html .= '<td style="background-color: ' . $hotel_bg_color . ';">$' . $hotel['cost_per_person'] . '</td>';
+                        } else {
+                            if ($index === 0) {
+                                $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold;">$' . number_format($pkg['total_cost']) . '</td>';
+                            } else {
+                                // $cost_html .= '<td style="background-color: ' . $hotel_bg_color . ';"></td>';
+                            }
+                        }
+                        
+                        // Child CNB cost column
+                        $child_hotel_cnb = $pkg['child_hotels_cnb'][$index] ?? null;
+                        $has_child_costs_cnb = $child_hotel_cnb && $pkg['total_child_cost_cnb'] !== '';
+
+                        if($has_child_costs_cnb) {
+                            if(!empty($hotel_markup_percentage)) {
+                                if ($child_hotel_cnb['cost_per_person'] === '') {
+                                    $cost_html .= '<td style="background-color: #d6d8d9; color: black;"></td>';
+                                } else {
+                                    $cost_html .= '<td style="background-color: #d6d8d9; color: black;">$' . $child_hotel_cnb['cost_per_person'] . '</td>';
+                                }
+                            } else {
+                                if ($index === 0) {
+                                    // Check only current hotel's CNB cost
+                                     if (isset($child_hotel_cnb['cost_per_person']) && is_numeric($child_hotel_cnb['cost_per_person'])) {
+                                        $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;">$' . number_format($pkg['total_child_cost_cnb']) . '</td>';
+                                    } else {
+                                        $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;"></td>';
+                                    }
+                                }
+                            }
+                        } else {
+                            // No child CNB costs available
+                            if(!empty($hotel_markup_percentage)) {
+                                $cost_html .= '<td style="background-color: #d6d8d9; color: black;">-</td>';
+                            } else {
+                                if ($index === 0) {
+                                    $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;">-</td>';
+                                } else {
+                                    $cost_html .= '<td style="background-color: #d6d8d9; color: black;"></td>';
+                                }
+                            }
+                        }
+
+                        // Child CWB cost column
+                       // Child CWB cost column
+                        $child_hotel_cwb = $pkg['child_hotels_cwb'][$index] ?? null;
+                        $has_child_costs_cwb = !empty($pkg['total_child_cost_cwb']) && $child_hotel_cwb;
+
+                        if($has_child_costs_cwb) {
+                            if(!empty($hotel_markup_percentage)) {
+                                if ($child_hotel_cwb['cost_per_person'] === '') {
+                                    $cost_html .= '<td style="background-color: #d6d8d9; color: black;"></td>';
+                                } else {
+                                    $cost_html .= '<td style="background-color: #d6d8d9; color: black;">$' . $child_hotel_cwb['cost_per_person'] . '</td>';
+                                }
+                            } else {
+                                if ($index === 0) {
+                                     if (isset($child_hotel_cwb['cost_per_person']) && is_numeric($child_hotel_cwb['cost_per_person'])) {
+                                        $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;">$' . number_format($pkg['total_child_cost_cwb']) . '</td>';
+                                    } else {
+                                        $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;"></td>';
+                                    }
+                                }
+                            }
+                        } else {
+                            // No child CWB costs available
+                            if(!empty($hotel_markup_percentage)) {
+                                $cost_html .= '<td style="background-color: #d6d8d9; color: black;">-</td>';
+                            } else {
+                                if ($index === 0) {
+                                    $cost_html .= '<td rowspan="' . $rowspan . '" style="background-color: #d6d8d9; font-weight:bold; color: black;">-</td>';
+                                } else {
+                                    $cost_html .= '<td style="background-color: #d6d8d9; color: black;"></td>';
+                                }
+                            }
+                        }
+                        
+                        $cost_html .= '</tr>';
+                    }
+                }
+
+                if(!empty($hotel_markup_percentage)) {
+                    $total_cols = 0;
+                    foreach ($hotel_names_category_wise as $rating_key => $hotels) {
+                        foreach ($hotels as $hotelData) {
+                            if (isset($hotelData['nights']) && $hotelData['nights'] > 0) {
+                                $total_cols++;
+                            }
+                        }
+                    }
+                    $grand_total_other = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price;
+                    $markup_percentage = floatval($this->input->post('markup_percentage'));
+                    $grand_total_other += ($grand_total_other * ($markup_percentage / 100));
+                    $converted_other = ($currency > 0) 
+                        ? round(($grand_total_other / $total_persons) / $currency) 
+                        : 0;
+                    $cost_html .= '<tr>
+                        <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Person</th>
+                        <td colspan="6" style="background-color:#d6d8d9;color:red;"> $'.$converted_other.'</td>
+                    </tr>';
+
+                    $grand_total_other_child = $all_day_child_activities_total + $hdn_final_child_ticket_price;
+                    $markup_percentage = floatval($this->input->post('markup_percentage'));
+                    $grand_total_other_child += ($grand_total_other_child * ($markup_percentage / 100));
+                    $converted_other = ($currency > 0) 
+                        ? round(($grand_total_other_child / $total_child_persons) / $currency) 
+                        : 0;
+                    $cost_html .= '<tr>
+                        <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Child</th>
+                        <td colspan="6" style="background-color:#d6d8d9;color:red;"> $'.$converted_other.'</td>
+                    </tr>';
+                }
+
+                $cost_html .= '</table>';
+            }
+        }
+        return $cost_html;
+    }
+
+    
+     private function findFallbackHotel($hotel_names_category_wise, $hotel_costing_category_wise, $night_no, $preferred_rating, $main_hotel_name, $total_persons, $currency, $markup_percentage, &$used_fallback_hotels = [], $hotel_markup_percentage)
+    {
+        // Step 1: Pehle same rating mein available hotels collect karo (excluding main hotel and NA)
+        $same_rating_hotels = [];
+        foreach ($hotel_names_category_wise[$preferred_rating] ?? [] as $hotel_id => $hotel_data) {
+            // Check if nights array exists
+            $has_nights = isset($hotel_data['nights']) && is_array($hotel_data['nights']);
+            $is_available = $has_nights && in_array($night_no, $hotel_data['nights']);
+            
+            if ($hotel_data['hotel_name'] != $main_hotel_name && 
+                $hotel_data['hotel_name'] != 'NA' && 
+                !in_array($hotel_data['hotel_name'], $used_fallback_hotels) &&
+                $is_available) {
+                $same_rating_hotels[] = [
+                    'hotel_id' => $hotel_id,
+                    'hotel_data' => $hotel_data,
+                    'rating' => $preferred_rating,
+                    'cost' => $hotel_costing_category_wise[$preferred_rating][$hotel_id] ?? 0
+                ];
+            }
+        }
+        
+        if (!empty($same_rating_hotels)) {
+            usort($same_rating_hotels, function($a, $b) {
+                return $a['cost'] <=> $b['cost'];
+            });
+            
+            $selected_hotel = $same_rating_hotels[0];
+            $used_fallback_hotels[] = $selected_hotel['hotel_data']['hotel_name'];
+            
+            return $this->calculateHotelCost($selected_hotel, $night_no, $total_persons, $currency, $markup_percentage, 'same_rating_fallback', $hotel_markup_percentage);
+        }
+
+        // Step 2: Same rating mein hotels check karo (used hotels allow karo)
+        $same_rating_all_hotels = [];
+        foreach ($hotel_names_category_wise[$preferred_rating] ?? [] as $hotel_id => $hotel_data) {
+            // Check if nights array exists - CORRECTION ADDED HERE
+            $has_nights = isset($hotel_data['nights']) && is_array($hotel_data['nights']);
+            $is_available = $has_nights && in_array($night_no, $hotel_data['nights']);
+            
+            if ($hotel_data['hotel_name'] != $main_hotel_name && 
+                $hotel_data['hotel_name'] != 'NA' &&
+                $is_available) { // CORRECTION: $is_available use karo
+                $same_rating_all_hotels[] = [
+                    'hotel_id' => $hotel_id,
+                    'hotel_data' => $hotel_data,
+                    'rating' => $preferred_rating,
+                    'cost' => $hotel_costing_category_wise[$preferred_rating][$hotel_id] ?? 0,
+                    'already_used' => in_array($hotel_data['hotel_name'], $used_fallback_hotels)
+                ];
+            }
+        }
+        
+        if (!empty($same_rating_all_hotels)) {
+            usort($same_rating_all_hotels, function($a, $b) {
+                if ($a['already_used'] != $b['already_used']) {
+                    return $a['already_used'] ? 1 : -1;
+                }
+                return $a['cost'] <=> $b['cost'];
+            });
+            
+            $selected_hotel = $same_rating_all_hotels[0];
+            
+            if (!$selected_hotel['already_used']) {
+                $used_fallback_hotels[] = $selected_hotel['hotel_data']['hotel_name'];
+            }
+            
+            return $this->calculateHotelCost($selected_hotel, $night_no, $total_persons, $currency, $markup_percentage, 'same_rating_used_fallback', $hotel_markup_percentage);
+        }
+
+        // Step 3: Dusri ratings check karo
+        $other_rating_hotels = [];
+        foreach ($hotel_names_category_wise as $rating => $hotels) {
+            if ($rating == $preferred_rating) continue;
+            
+            foreach ($hotels as $hotel_id => $hotel_data) {
+                // Agar hotel mein nights array nahi hai, toh assume karo ki sabhi nights ke liye available hai
+                $has_nights = isset($hotel_data['nights']) && is_array($hotel_data['nights']);
+                $is_available = !$has_nights || in_array($night_no, $hotel_data['nights']);
+                
+                // NA ko exclude karo, lekin used hotels allow karo
+                if ($hotel_data['hotel_name'] != 'NA' && 
+                    $is_available) {
+                    $other_rating_hotels[] = [
+                        'hotel_id' => $hotel_id,
+                        'hotel_data' => $hotel_data,
+                        'rating' => $rating,
+                        'cost' => $hotel_costing_category_wise[$rating][$hotel_id] ?? 0,
+                        'already_used' => in_array($hotel_data['hotel_name'], $used_fallback_hotels)
+                    ];
+                }
+            }
+        }
+        
+        // Step 4: Dusri rating mein mil gaya, toh use karo
+        if (!empty($other_rating_hotels)) {
+            // Pehle unused hotels, phir used hotels (cheapest first)
+            usort($other_rating_hotels, function($a, $b) {
+                // Pehle unused hotels
+                if ($a['already_used'] != $b['already_used']) {
+                    return $a['already_used'] ? 1 : -1;
+                }
+                // Phir cost ke hisaab se
+                return $a['cost'] <=> $b['cost'];
+            });
+            
+            $selected_hotel = $other_rating_hotels[0];
+            
+            // Used hotels mein add karo (agar pehle se used nahi hai)
+            if (!$selected_hotel['already_used']) {
+                $used_fallback_hotels[] = $selected_hotel['hotel_data']['hotel_name'];
+            }
+            
+            return $this->calculateHotelCost($selected_hotel, $night_no, $total_persons, $currency, $markup_percentage, 'different_rating_fallback', $hotel_markup_percentage);
+        }
+
+        // Step 5: Same rating mein NA available hai, toh NA use karo
+        $na_hotels = [];
+        foreach ($hotel_names_category_wise[$preferred_rating] ?? [] as $hotel_id => $hotel_data) {
+            // Check if nights array exists
+            $has_nights = isset($hotel_data['nights']) && is_array($hotel_data['nights']);
+            $is_available = $has_nights && in_array($night_no, $hotel_data['nights']);
+            
+            if ($hotel_data['hotel_name'] == 'NA' && $is_available) {
+                $na_hotels[] = [
+                    'hotel_id' => $hotel_id,
+                    'hotel_data' => $hotel_data,
+                    'rating' => $preferred_rating,
+                    'cost' => $hotel_costing_category_wise[$preferred_rating][$hotel_id] ?? 0
+                ];
+            }
+        }
+        
+        if (!empty($na_hotels)) {
+            $selected_hotel = $na_hotels[0];
+            return $this->calculateHotelCost($selected_hotel, $night_no, $total_persons, $currency, $markup_percentage, 'na_fallback', $hotel_markup_percentage);
+        }
+
+        // Step 6: Koi bhi hotel nahi mila
+        return [
+            'name' => 'N/A',
+            'rating' => 'No Hotel',
+            'night' => $night_no,
+            'cost_per_person' => 0,
+            'type' => 'not_available'
+        ];
+    }
+    
+     private function calculateHotelCost($hotel_info, $night_no, $total_persons, $currency, $markup_percentage, $type, $hotel_markup_percentage)
+    {
+        $hotel_id = $hotel_info['hotel_id'];
+        $hotel_data = $hotel_info['hotel_data'];
+        $rating = $hotel_info['rating'];
+        $total_hotel_cost = $hotel_info['cost'];
+        
+        // CORRECTION: Agar hotel cost 0 hai, toh 0 return karo blank nahi
+        if ($total_hotel_cost == 0) {
+            return [
+                'name' => $hotel_data['hotel_name'],
+                'rating' => $rating,
+                'night' => $night_no,
+                'cost_per_person' => 0, // 0 return karo, blank nahi
+                'type' => $type
+            ];
+        }
+        
+        $nights_count = isset($hotel_data['nights']) && is_array($hotel_data['nights']) ? count($hotel_data['nights']) : 1;
+        $per_night_cost = $total_hotel_cost / max($nights_count, 1);
+        
+        $per_person = ($total_persons > 0 && $currency > 0)
+            ? ($per_night_cost / $total_persons) / $currency
+            : 0;
+        
+        if(!empty($hotel_markup_percentage))
+        {
+            $per_person += ($per_person * ($hotel_markup_percentage / 100));   
+        }else{
+            $per_person += ($per_person * ($markup_percentage / 100));
+        }
+
+        return [
+            'name' => $hotel_data['hotel_name'],
+            'rating' => $rating,
+            'night' => $night_no,
+            'cost_per_person' => round($per_person),
+            'type' => $type
+        ];
+    }
+    
+    private function generate_individual_cost_table($hotel_costing_category_wise, $total_persons, $total_transportation, $guide_grand_total, $hdn_mandatory_grand_total, $all_day_activities_total, $hdn_final_ticket_price, $markup_percentage, $currency, $nights, $hotel_markup_percentage, $grandTotalMeal, $hdn_final_group_ticket_price, $all_day_child_activities_total, $activities_group_total, $hdn_final_child_ticket_price, $total_child_persons, $early_checkin, $reduced_margins, $reduced_land_margins, $entrance_group_total, $entrance_adult_total, $entrance_child_total, $train_adult_price, $train_child_price, $driver_grand_total, $child_mandatory_grand_total, $childMealCost, $enquiry_id, $quotation_id )
+    {
+        // print_r($hdn_final_ticket_price);
+        $grand_total = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price + $entrance_adult_total + $entrance_group_total + $train_adult_price + $driver_grand_total + $activities_group_total;
+        $grand_total_pp = $grand_total / $total_persons;
+        $grand_total_pp += ($grand_total_pp * ($markup_percentage / 100));
+
+        if($total_child_persons > 0){
+            $grand_total_child = $all_day_child_activities_total + $hdn_final_child_ticket_price + $entrance_child_total + $train_child_price + $child_mandatory_grand_total + $childMealCost;
+            $grand_total_child_pp = $grand_total_child / $total_child_persons;
+            $grand_total_child_pp += ($grand_total_child_pp * ($markup_percentage / 100));
+        }
+
+        $cost_html = '';
+        $has_valid_nights = false;
+        foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+            foreach ($hotels as $hotel_name => $categories) {
+                if (!empty($categories['nights'])) {
+                    $filtered_nights = array_filter($categories['nights'], fn($v) => $v != 0);
+                    if (count($filtered_nights) > 0) {
+                        $has_valid_nights = true;
+                        break 2; // exit both loops
+                    }
+                }
+            }
+        }
+        
+        if (!$has_valid_nights) {
+           
+            $sorted_costing = [];
+
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+            
+                    $sorted_costing[$rating_key][$hotel_name] = [];
+            
+                    // Keep meta keys like nights, hotel_id etc.
+                    foreach ($categories as $meta_key => $meta_val) {
+                        if ($meta_key === 'nights' || !is_array($meta_val)) {
+                            $sorted_costing[$rating_key][$hotel_name][$meta_key] = $meta_val;
+                        }
+                    }
+            
+                    $category_blocks = [];
+            
+                    foreach ($categories as $cat => $occupancies) {
+                        if ($cat === 'nights' || !is_array($occupancies)) {
+                            continue;
+                        }
+            
+                        $display_occ = [];
+                        $cnb_cwb_occ = [];
+            
+                        foreach ($occupancies as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $type = $occ_arr[0] ?? '';
+            
+                            if (stripos($type, 'CNB') !== false || stripos($type, 'CWB') !== false) {
+                                $cnb_cwb_occ[] = $occ;
+                            } else {
+                                $display_occ[] = $occ;
+                            }
+                        }
+            
+                        // Sort occupancies inside same category by price
+                        usort($display_occ, function ($a, $b) {
+                            $priceA = (float) (explode('__', $a)[1] ?? 0);
+                            $priceB = (float) (explode('__', $b)[1] ?? 0);
+                            return $priceA <=> $priceB;
+                        });
+            
+                        // Find category lowest adult price
+                        $min_price = PHP_FLOAT_MAX;
+                        foreach ($display_occ as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $price = (float) ($occ_arr[1] ?? 0);
+            
+                            if ($price < $min_price) {
+                                $min_price = $price;
+                            }
+                        }
+            
+                        $category_blocks[] = [
+                            'cat' => $cat,
+                            'display_occ' => $display_occ,
+                            'cnb_cwb_occ' => $cnb_cwb_occ,
+                            'min_price' => $min_price
+                        ];
+                    }
+            
+                    // Sort room categories by their lowest adult price
+                    usort($category_blocks, function ($a, $b) {
+                        return $a['min_price'] <=> $b['min_price'];
+                    });
+            
+                    // Rebuild category order
+                    foreach ($category_blocks as $block) {
+                        $sorted_costing[$rating_key][$hotel_name][$block['cat']] = array_merge(
+                            $block['display_occ'],
+                            $block['cnb_cwb_occ']
+                        );
+                    }
+                }
+            }
+            
+            $hotel_costing_category_wise = $sorted_costing;
+            $cost_html .= '<table class="rating-table" border="1" cellpadding="5" cellspacing="0" style="border:2px solid black !important;border-collapse: collapse; width:100%; text-align: left;">';
+            $cost_html .= '<tr><th style="background-color: #b8b8b8;">Rating</th>';
+            
+            // Calculate colspan for each rating (EXCLUDE CNB/CWB)
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                $colspan = 0;
+                foreach ($hotels as $hotel_name => $categories) {
+                    foreach ($categories as $cat => $occupancies) {
+                        if (is_array($occupancies)) {
+                            // EXCLUDE CNB and CWB from column count
+                            $occupancy_type = '';
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                // Skip CNB and CWB occupancies
+                                if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                    $colspan++;
+                                }
+                            }
+                        }
+                    }
+                }
+                $rating_display = ucwords(str_replace('_', ' ', $rating_key));
+                $cost_html .= '<th colspan="' . $colspan . '" style="background-color: #b8b8b8;text-align: center !important;">' . $rating_display . '</th>';
+            }
+            $cost_html .= '</tr>';
+            
+            // Hotel row
+            $cost_html .= '<tr><th style="background-color: #c7c8c9;">Hotel</th>';
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) { 
+                    $occ_count = 0;
+                    foreach ($categories as $cat => $occupancies) {
+                        if ($cat === "nights") continue;
+                        if (is_array($occupancies)) {
+                            // Count only non-CNB/CWB occupancies
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                    $occ_count++;
+                                }
+                            }
+                        }
+                    }
+
+                    $nights = isset($categories['nights']) ? $categories['nights'] : 0;
+                
+                    if (is_array($nights)) {
+                        $filtered_nights = array_filter($nights, function($v) {
+                            return $v != 0; // remove any 0 entries
+                        });
+                        $night_count = count($filtered_nights);
+                    } else {
+                        $night_count = (int)$nights;
+                    }
+
+                    $hotel_display = strstr($hotel_name, '_', true) . ($nights ? " ({$night_count}N)" : "");
+
+                    // $hotel_data = $this->get_hotel_id_by_name(strstr($hotel_name, '_', true));
+                    
+                    $hotel_id = $categories['hotel_id'] ?? '';
+                    $hotel_data = $this->get_hotel_id_by_name_new($hotel_id);
+                    $hotelID = 0;
+                    if (is_object($hotel_data)) {
+                        $hotelID = property_exists($hotel_data, 'id') ? $hotel_data->id : 0;
+                    } elseif (is_array($hotel_data)) {
+                        $hotelID = isset($hotel_data['id']) ? $hotel_data['id'] : 0;
+                    } else {
+                        $hotelID = (int) $hotel_data;
+                    }
+
+                    $hotelID_str = (string) $hotelID;
+                    $enquiry_id_val = 0;
+                    $quotation_id_val = 0;
+
+                    if (is_object($enquiry_id)) {
+                        $enquiry_id_val = property_exists($enquiry_id, 'id') ? $enquiry_id->id : (property_exists($enquiry_id, 'enquiry_id') ? $enquiry_id->enquiry_id : 0);
+                    } elseif (is_array($enquiry_id)) {
+                        $enquiry_id_val = isset($enquiry_id['id']) ? $enquiry_id['id'] : (isset($enquiry_id['enquiry_id']) ? $enquiry_id['enquiry_id'] : 0);
+                    } else {
+                        $enquiry_id_val = (int) $enquiry_id;
+                    }
+
+                    if (is_object($quotation_id)) {
+                        $quotation_id_val = property_exists($quotation_id, 'id') ? $quotation_id->id : (property_exists($quotation_id, 'quotation_id') ? $quotation_id->quotation_id : 0);
+                    } elseif (is_array($quotation_id)) {
+                        $quotation_id_val = isset($quotation_id['id']) ? $quotation_id['id'] : (isset($quotation_id['quotation_id']) ? $quotation_id['quotation_id'] : 0);
+                    } else {
+                        $quotation_id_val = (int) $quotation_id;
+                    }
+
+                    $tracking_url = base_url("track-hotel-click?hotel_id=" . base64_encode($hotelID_str) . "&enquiry_id=" . $enquiry_id_val . "&quotation_id=" . $quotation_id_val);
+                    
+                    // $tracking_url = '';
+                    if ($hotel_data && !empty($hotel_data->image)) {
+                        // Has image → create clickable link
+                        $hotel_link = '<a href="' . $tracking_url . '" target="_blank" class="hotel-link" title="Click here to view the hotel page">' . $hotel_display . '</a>';
+                    } else {
+                        // No image → plain text
+                        $hotel_link = '<span title="This Facility is not Available">' . $hotel_display . '</span>';
+                    }
+                    
+                    if($early_checkin ==='on'){
+                            $hotel_link .= " <span style='color:#0c0c0cff;font-weight:500;'>(Guaranteed Early Check-In Included)</span>";
+                        
+                    }
+                    $cost_html .= '<td colspan="' . $occ_count . '" style="background-color: #d6d8d9; font-weight:bold;color:#6060a9;">' . $hotel_link . '</td>';
+                }
+            }
+            $cost_html .= '</tr>';
+            $cost_html .= '<tr><th style="background-color: #c7c8c9;white-space: nowrap !important;">Room Category</th>';
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    $roomCats = [];
+                    $categoryIds = [];
+                    
+                    // First, collect all non-CNB/CWB occupancies and their categories
+                    foreach ($categories as $cat => $occupancies) {
+                        if (!is_array($occupancies)) continue;
+                         $hotel_id = $categories['hotel_id'] ?? 0;
+                        foreach ($occupancies as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                            $category_id = isset($occ_arr[2]) ? $occ_arr[2] : $this->get_category_id_by_name_new($cat, $hotel_id);
+                            
+                            // Only include non-CNB/CWB occupancies
+                            if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                $roomCats[] = [
+                                    'category' => $cat,
+                                    'id' => $category_id,
+                                    'hotel_name' => $hotel_name // Hotel name рднреА store рдХрд░реЗрдВ
+                                ];
+                            }
+                        }
+                    }
+
+                    // Group consecutive same categories for colspan
+                    $groupedCats = [];
+                    $prevCat = null;
+                    $currentGroup = [];
+                    
+                    foreach ($roomCats as $roomCat) {
+                        if ($prevCat === null) {
+                            // First category
+                            $currentGroup[] = $roomCat;
+                        } elseif ($roomCat['category'] === $prevCat['category']) {
+                            // Same category, add to current group
+                            $currentGroup[] = $roomCat;
+                        } else {
+                            // Different category, save current group and start new one
+                            $groupedCats[] = $currentGroup;
+                            $currentGroup = [$roomCat];
+                        }
+                        $prevCat = $roomCat;
+                    }
+                    
+                    // Don't forget the last group
+                    if (!empty($currentGroup)) {
+                        $groupedCats[] = $currentGroup;
+                    }
+
+                    // Now display the grouped categories
+                    foreach ($groupedCats as $group) {
+                        $colspan = count($group);
+                        $firstCat = $group[0];
+                        
+                        $cost_html .= '<td colspan="' . $colspan . '" style="background-color: #d6d8d9;">';
+                        
+                        // Check if category has description and image
+                        $category_id = $firstCat['id'];
+                        $has_details = false;
+                        
+                        if ($category_id > 0) {
+                            // Check if category has description and image
+                            $this->db->select('category_description, category_image');
+                            $this->db->from('hotel_room_categories');
+                            $this->db->where('id', $category_id);
+                            $this->db->where("category_description IS NOT NULL AND category_description != ''");
+                            $this->db->where("category_image IS NOT NULL AND category_image != ''");
+                            $category_check = $this->db->get();
+                            
+                            $has_details = ($category_check->num_rows() > 0);
+                        }
+                        
+                        // Only show hyperlink if category has both description and image
+                        if ($has_details) {
+                            $cost_html .= '<a href="'.base_url('room-category-page/'.base64_encode($firstCat['id'])).'" target="_blank" style="color: #131313ff; text-decoration: underline;text-decoration-color: blue;" title="Click to view category details">';
+                            $cost_html .= $firstCat['category'];
+                            $cost_html .= '</a>';
+                        } else {
+                            // Without hyperlink
+                            $cost_html .= $firstCat['category'];
+                        }
+                        
+                        $cost_html .= '</td>';
+                    }
+                }
+            }
+            $cost_html .= '</tr>';
+            
+            // Room Occupancy row - REMOVE CNB and CWB
+            $cost_html .= '<tr><th style="background-color: #c7c8c9;">Room Occupancy</th>';
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    foreach ($categories as $cat => $occupancies) {
+                        if (!is_array($occupancies)) continue;
+                        foreach ($occupancies as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                            $occupancy_type = str_ireplace("Occupancy", "", $occupancy_type);
+                            $occupancy_type = trim($occupancy_type);
+                            
+                            // Skip CNB and CWB occupancies
+                            if (strpos($occupancy_type, 'CNB') !== false || strpos($occupancy_type, 'CWB') !== false) {
+                                continue;
+                            }
+                            
+                            if($occupancy_type == 'Double'){
+                                $occupancy_type = 'Double/Twin';
+                                $cost_html .= '<td style="background-color: #d6d8d9;"><b>' . $occupancy_type . '</b></td>';
+                            } else {
+                                $cost_html .= '<td style="background-color: #d6d8d9;"><b>' . $occupancy_type . '</b></td>';
+                            }
+                        }
+                    }
+                }
+            }
+            $cost_html .= '</tr>';
+            
+            // Hotel Cost Per Person row - REMOVE CNB and CWB costs
+            $label = ($hotel_markup_percentage) ? "Hotel Cost Per Room / Night" : "Cost Per Person";
+            $cost_html .= '<tr><th style="background-color: #ecc900ff;">'. $label .'</th>';
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    foreach ($categories as $cat => $occupancies) {
+                        if (!is_array($occupancies)) continue;  
+                        foreach ($occupancies as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                            
+                            // Skip CNB and CWB costs
+                            if (strpos($occupancy_type, 'CNB') !== false || strpos($occupancy_type, 'CWB') !== false) {
+                                continue;
+                            }
+                            
+                            $occupancy_cost = isset($occ_arr[1]) ? floatval($occ_arr[1]) : 0;
+
+                            if(!empty($hotel_markup_percentage)) {
+                                $occupancy_cost += ($occupancy_cost * ($hotel_markup_percentage / 100));
+                            } else {
+                                $occupancy_cost += ($occupancy_cost * ($markup_percentage / 100));
+                            }
+
+                            if ($has_valid_nights) {
+                                $cost_with_total = $occupancy_cost;
+                            } else {
+                                $cost_with_total = $occupancy_cost;
+                                if (empty($hotel_markup_percentage)) {
+                                    $cost_with_total += $grand_total_pp;
+                                }
+                            }
+                            $converted = ($currency > 0) ? round($cost_with_total / $currency) : 0;
+                            
+                            $base_hotel_name = strstr($hotel_name, '_', true);
+                            if (!$base_hotel_name) {
+                                $base_hotel_name = $hotel_name;
+                            }
+                            $clean_occupancy_type = trim(str_ireplace("Occupancy", "", $occupancy_type));
+                            $reduced_adult_margin = 0;
+                            foreach ($reduced_margins as $margin) {
+                                if ($margin['type'] == 'adult' && $margin['hotel'] == $base_hotel_name && 
+                                    $margin['room_category'] == $cat && trim($margin['occupancy']) == trim($clean_occupancy_type    )) {
+                                    $reduced_adult_margin = floatval($margin['value']);
+                                    break;
+                                }
+                            }
+                            $converted -= $reduced_adult_margin;
+
+                            $cost_html .= '<td style="background-color: #d6d8d9;">$' . $converted . '</td>';
+                        }
+                    }
+                }
+            }
+            $cost_html .= '</tr>';
+            
+            // Check if we have any CNB/CWB occupancies across all hotels (regardless of cost)
+            $has_cnb_occupancies = false;
+            $has_cwb_occupancies = false;
+            
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    foreach ($categories as $cat => $occupancies) {
+                        if (!is_array($occupancies)) continue;
+                        foreach ($occupancies as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                            
+                            if (strpos($occupancy_type, 'CNB') !== false) {
+                                $has_cnb_occupancies = true;
+                            }
+                            if (strpos($occupancy_type, 'CWB') !== false) {
+                                $has_cwb_occupancies = true;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // NEW: CNB Cost Per Person row - show for each hotel (only if we have CNB occupancies)
+            if($total_child_persons > 0 && $has_cnb_occupancies){
+                $cost_html .= '<tr><th style="background-color: #ecc900ff; color: black;">Cost CNB Per Child</th>';
+                foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                    foreach ($hotels as $hotel_name => $categories) {
+                        $cnb_costs = [];
+                        $occupancy_count = 0;
+                        
+                        // Count only ADULT occupancies for proper colspan alignment
+                        foreach ($categories as $cat => $occupancies) {
+                            if (!is_array($occupancies)) continue;
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                    $occupancy_count++;
+                                }
+                            }
+                        }
+                        
+                        // Find CNB costs (include even if cost is 0)
+                        foreach ($categories as $cat => $occupancies) {
+                            if (!is_array($occupancies)) continue;
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                
+                                // Check if this is a CNB occupancy
+                                if (strpos($occupancy_type, 'CNB') !== false) {
+                                    $occupancy_cost = isset($occ_arr[1]) ? floatval($occ_arr[1]) : 0;
+                                    
+                                    // Include even if cost is 0
+                                    if(!empty($hotel_markup_percentage)) {
+                                        $occupancy_cost += ($occupancy_cost * ($hotel_markup_percentage / 100));
+                                    } else {
+                                        $occupancy_cost += ($occupancy_cost * ($markup_percentage / 100));
+                                    }
+
+                                    if ($has_valid_nights) {
+                                        $cost_with_total = $occupancy_cost;
+                                    } else {
+                                        $cost_with_total = $occupancy_cost;
+                                        if (empty($hotel_markup_percentage)) {
+                                            $cost_with_total += $grand_total_child_pp;
+                                        }
+                                    }
+                                    
+                                    $converted = ($currency > 0) ? round($cost_with_total / $currency) : 0;
+                                    
+                                    $base_hotel_name = strstr($hotel_name, '_', true);
+                                    if (!$base_hotel_name) {
+                                        $base_hotel_name = $hotel_name;
+                                    }
+                                    $reduced_cnb_margin = 0;
+                                    foreach ($reduced_margins as $margin) {
+                                        if ($margin['type'] == 'cnb' && 
+                                            strcasecmp(trim($margin['hotel']), trim($base_hotel_name)) == 0) {
+                                            $reduced_cnb_margin = floatval($margin['value']);
+                                            break;
+                                        }
+                                    }
+                                    
+                                    $converted -= $reduced_cnb_margin;
+                                    $cnb_costs[] = $converted;
+                                }
+                            }
+                        }
+                        
+                        // Display CNB cost for this hotel
+                        if (!empty($cnb_costs)) {
+                            $cnb_cost = min($cnb_costs); // Show minimum CNB cost
+                            $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black;">$' . $cnb_cost . '</td>';
+                        } else {
+                            $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black;">-</td>';
+                        }
+                    }
+                }
+                $cost_html .= '</tr>';
+            }
+            
+            // NEW: CWB Cost Per Person row - show for each hotel (only if we have CWB occupancies)
+            if($total_child_persons > 0 && $has_cwb_occupancies){
+                $cost_html .= '<tr><th style="background-color: #ecc900ff; color: black;">Cost CWB Per Child</th>';
+                foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                    foreach ($hotels as $hotel_name => $categories) {
+                        $cwb_costs = [];
+                        $occupancy_count = 0;
+                        
+                        // Count only ADULT occupancies for proper colspan alignment
+                        foreach ($categories as $cat => $occupancies) {
+                            if (!is_array($occupancies)) continue;
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                    $occupancy_count++;
+                                }
+                            }
+                        }
+                        
+                        // Find CWB costs (include even if cost is 0)
+                        foreach ($categories as $cat => $occupancies) {
+                            if (!is_array($occupancies)) continue;
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                
+                                // Check if this is a CWB occupancy
+                                if (strpos($occupancy_type, 'CWB') !== false) {
+                                    $occupancy_cost = isset($occ_arr[1]) ? floatval($occ_arr[1]) : 0;
+                                    
+                                    // Include even if cost is 0
+                                    if(!empty($hotel_markup_percentage)) {
+                                        $occupancy_cost += ($occupancy_cost * ($hotel_markup_percentage / 100));
+                                    } else {
+                                        $occupancy_cost += ($occupancy_cost * ($markup_percentage / 100));
+                                    }
+
+                                    if ($has_valid_nights) {
+                                        $cost_with_total = $occupancy_cost;
+                                    } else {
+                                        $cost_with_total = $occupancy_cost;
+                                        if (empty($hotel_markup_percentage)) {
+                                            $cost_with_total += $grand_total_child_pp;
+                                        }
+                                    }
+                                    
+                                    $converted = ($currency > 0) ? round($cost_with_total / $currency) : 0;
+                                    
+                                    $base_hotel_name = strstr($hotel_name, '_', true);
+                                    if (!$base_hotel_name) {
+                                        $base_hotel_name = $hotel_name;
+                                    }
+
+                                    $reduced_cwb_margin = 0;
+                                    foreach ($reduced_margins as $margin) {
+                                        if ($margin['type'] == 'cwb' && 
+                                            strcasecmp(trim($margin['hotel']), trim($base_hotel_name)) == 0) {
+                                            $reduced_cwb_margin = floatval($margin['value']);
+                                            break;
+                                        }
+                                    }
+                                    $converted -= $reduced_cwb_margin;
+                                    $cwb_costs[] = $converted;
+                                }
+                            }
+                        }
+                        
+                        // Display CWB cost for this hotel
+                        if (!empty($cwb_costs)) {
+                            $cwb_cost = min($cwb_costs); // Show minimum CWB cost
+                            $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black;">$' . $cwb_cost . '</td>';
+                        } else {
+                            $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black;">-</td>';
+                        }
+                    }
+                }
+                $cost_html .= '</tr>';
+            }
+            
+            // Land Package Cost Per Person 
+            if(!empty($hotel_markup_percentage)){
+                $total_cols = 0;
+                foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                    foreach ($hotels as $hotel_name => $categories) {
+                        foreach ($categories as $cat => $occupancies) {
+                            if (is_array($occupancies)) {
+                                foreach ($occupancies as $occ) {
+                                    $occ_arr = explode('__', $occ);
+                                    $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                    if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                        $total_cols++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                $converted_other = ($currency > 0) 
+                    ? round($grand_total_pp / $currency) 
+                    : 0;
+                    
+                $land_adult_reduced = 0;
+                foreach ($reduced_land_margins as $margin) {
+                    if ($margin['type'] == 'land_adult') {
+                        $land_adult_reduced = floatval($margin['value']);
+                        break;
+                    }
+                }
+                $converted_other -= $land_adult_reduced;    
+                $cost_html .= '<tr>
+                    <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Person</th>
+                    <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other.'</td>
+                </tr>';
+                if($total_child_persons > 0){
+                $converted_other_child = ($currency > 0) 
+                    ? round($grand_total_child_pp / $currency) 
+                    : 0;
+                
+                $land_child_reduced = 0;
+                foreach ($reduced_land_margins as $margin) {
+                    if ($margin['type'] == 'land_child') {
+                        $land_child_reduced = floatval($margin['value']);
+                        break;
+                    }
+                }
+                $converted_other_child -= $land_child_reduced;
+                    
+                $cost_html .= '<tr>
+                    <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Child</th>
+                    <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other_child.'</td>
+                </tr>';
+                }
+            }
+            $cost_html .= '</table>';
+        }
+    
+       if ($has_valid_nights) {
+            $normalized_hotel_costing = [];
+            
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                $normalized_hotel_costing[$rating_key] = [];
+                
+                foreach ($hotels as $hotel_identifier => $categories) {
+                    $hotel_parts = explode('_', $hotel_identifier);
+                    $hotel_name = '';
+                    $hotel_nights = [];
+                    
+                    // PRIORITY 1: Use existing 'nights' array if present
+                    if (isset($categories['nights']) && is_array($categories['nights'])) {
+                        $hotel_nights = $categories['nights'];
+                        // Extract hotel name from identifier (everything before first numeric)
+                        for ($i = 0; $i < count($hotel_parts); $i++) {
+                            if (is_numeric($hotel_parts[$i])) {
+                                $hotel_name = implode('_', array_slice($hotel_parts, 0, $i));
+                                break;
+                            }
+                        }
+                    } 
+                    // PRIORITY 2: Parse nights from identifier (original logic)
+                    else {
+                        for ($i = 0; $i < count($hotel_parts); $i++) {
+                            if (is_numeric($hotel_parts[$i])) {
+                                $hotel_name = implode('_', array_slice($hotel_parts, 0, $i));
+                                $hotel_nights = array_slice($hotel_parts, $i);
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // PRIORITY 3: If still no nights, extract from room category names
+                    if (empty($hotel_nights)) {
+                        if (empty($hotel_name)) {
+                            $hotel_name = $hotel_identifier;
+                        }
+                        $hotel_nights = [];
+                        foreach ($categories as $cat => $occupancies) {
+                            if (strpos($cat, '_nights_') !== false) {
+                                $parts = explode('_nights_', $cat);
+                                if (isset($parts[1])) {
+                                    $night_parts = explode('_', $parts[1]);
+                                    $hotel_nights = array_merge($hotel_nights, $night_parts);
+                                }
+                            }
+                        }
+                        $hotel_nights = array_unique($hotel_nights);
+                        sort($hotel_nights);
+                    }
+                    
+                    // Fallback: default nights 1..N
+                    if (empty($hotel_nights)) {
+                        $hotel_nights = range(1, $nights);
+                    }
+                    
+                    // Ensure hotel name is never empty
+                    if (empty($hotel_name)) {
+                        $hotel_name = $hotel_identifier;
+                    }
+                    
+                    // Create new identifier
+                    $new_hotel_identifier = $hotel_name . '_' . implode('_', $hotel_nights);
+                    
+                    // Get hotel details from original categories or database
+                    $hotel_id = isset($categories['hotel_id']) ? $categories['hotel_id'] : '';
+                    $hotel_city = isset($categories['hotel_city']) ? $categories['hotel_city'] : '';
+                    
+                    if (empty($hotel_id) || empty($hotel_city)) {
+                        $hotel_details = $this->get_hotel_id_by_name_new($hotel_id);
+                        if ($hotel_details) {
+                            $hotel_id = $hotel_details->id ?? 0;
+                            $hotel_city = $hotel_details->city;
+                        }
+                    }
+                    
+                    // Initialize normalized entry WITH ALL REQUIRED KEYS
+                    $normalized_hotel_costing[$rating_key][$new_hotel_identifier] = [
+                        'hotel_name' => $hotel_name,
+                        'hotel_id'   => $hotel_id,
+                        'hotel_city' => $hotel_city,
+                        'nights'     => $hotel_nights
+                    ];
+                    
+                    // Add room categories
+                    foreach ($categories as $cat => $occupancies) {
+                        if (in_array($cat, ['hotel_name', 'hotel_id', 'hotel_city', 'nights'])) {
+                            continue;
+                        }
+                        
+                        if (strpos($cat, '_nights_') !== false) {
+                            $new_cat_name = $cat;
+                        } else {
+                            $new_cat_name = $cat . '_nights_' . implode('_', $hotel_nights);
+                        }
+                        
+                        $normalized_hotel_costing[$rating_key][$new_hotel_identifier][$new_cat_name] = $occupancies;
+                    }
+                }
+            }
+            
+            $hotel_costing_category_wise = $normalized_hotel_costing;
+        
+
+            $hotels_by_ratings = [];
+        
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    $nights_array = $categories['nights'] ?? [];
+                    $filtered_nights = is_array($nights_array) ? $nights_array : [];
+        
+                    if (empty($filtered_nights)) continue;
+        
+                    // Filter only positive nights for package grouping (exclude 0 and -1)
+                    $package_nights = array_filter($filtered_nights, function($n) {
+                        return $n > 0; // Only positive numbers are actual nights
+                    });
+                    
+                    if (empty($package_nights)) continue;
+        
+                    foreach ($package_nights as $night_no) {
+                        $hotels_by_ratings[$rating_key][$night_no][] = [
+                            'name' => $hotel_name,
+                            'rating' => $rating_key,
+                            'night_no' => $night_no,
+                            'categories' => $categories,
+                            'has_early_checkin' => in_array(0, $filtered_nights),
+                            'has_late_checkout' => in_array(-1, $filtered_nights)
+                        ];
+                    }
+                }
+            }
+        
+            $all_ratings = array_keys($hotels_by_ratings);
+            $all_nights = [];
+        
+            foreach ($hotels_by_ratings as $rating => $night_hotels) {
+                $all_nights = array_unique(array_merge($all_nights, array_keys($night_hotels)));
+            }
+        
+            sort($all_nights);
+        
+            foreach ($all_ratings as $rating) {
+                foreach ($all_nights as $night_no) {
+                    if (
+                        !isset($hotels_by_ratings[$rating][$night_no]) ||
+                        empty($hotels_by_ratings[$rating][$night_no])
+                    ) {
+                        foreach ($all_ratings as $alt_rating) {
+                            if ($alt_rating === $rating) continue;
+                            if (!empty($hotels_by_ratings[$alt_rating][$night_no])) {
+                                $hotels_by_ratings[$rating][$night_no] = $hotels_by_ratings[$alt_rating][$night_no];
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        
+            $packages = [];
+            $package_index = 1;
+        
+            foreach ($hotels_by_ratings as $rating => $night_groups) {
+                $max_count = 0;
+                foreach ($night_groups as $night_hotels) {
+                    $max_count = max($max_count, count($night_hotels));
+                }
+        
+                for ($i = 0; $i < $max_count; $i++) {
+                    $combo = [];
+        
+                    foreach ($all_nights as $night_no) {
+                        $night_hotels = $night_groups[$night_no];
+                        $hotel = $night_hotels[$i] ?? end($night_hotels);
+        
+                        if (!$hotel) {
+                            foreach ($all_ratings as $alt_rating) {
+                                if ($alt_rating == $rating) continue;
+                                if (!empty($hotels_by_ratings[$alt_rating][$night_no])) {
+                                    $hotel = $hotels_by_ratings[$alt_rating][$night_no][$i] ?? end($hotels_by_ratings[$alt_rating][$night_no]);
+                                    if ($hotel) break;
+                                }
+                            }
+                        }
+        
+                        if ($hotel) {
+                            $combo[] = $hotel;
+                        }
+                    }
+
+                    if (!empty($combo)) {
+                        $merged_costs = [];
+                        $hotel_wise_costs = []; 
+                        $hotel_room_occupancies = [];
+                        
+                        // Group hotels first to process each hotel only ONCE
+                        $hotels_in_package = [];
+                        foreach ($combo as $hotel) {
+                            $hotel_name = $hotel['name'];
+                            if (!isset($hotels_in_package[$hotel_name])) {
+                                $hotels_in_package[$hotel_name] = [
+                                    'data' => $hotel,
+                                    'night_count' => 0
+                                ];
+                            }
+                            $hotels_in_package[$hotel_name]['night_count']++;
+                        }
+                        
+                        // ✅ नया कोड: पहले ही पैकेज की पहली और आखिरी रात के होटल नाम निकालें
+                        $first_night_hotel = null;
+                        $last_night_hotel = null;
+                        $min_night = PHP_INT_MAX;
+                        $max_night = -1;
+                        
+                        foreach ($combo as $hotel) {
+                            $night = $hotel['night_no'];
+                            if ($night > 0) { 
+                                if ($night < $min_night) {
+                                    $min_night = $night;
+                                    $first_night_hotel = $hotel['name'];
+                                }
+                                if ($night > $max_night) {
+                                    $max_night = $night;
+                                    $last_night_hotel = $hotel['name'];
+                                }
+                            }
+                        }
+                        
+                        // Now calculate costs for each unique hotel
+                        foreach ($hotels_in_package as $hotel_name => $hotel_info) {
+                            $hotel = $hotel_info['data'];
+                            $night_count = $hotel_info['night_count'];
+                            $categories = $hotel['categories'];
+                            $has_early_checkin = $hotel['has_early_checkin'] ?? false;
+                            $has_late_checkout = $hotel['has_late_checkout'] ?? false;
+                            
+                            // Initialize arrays for this hotel if not exists
+                            if (!isset($hotel_wise_costs[$hotel_name])) {
+                                $hotel_wise_costs[$hotel_name] = [];
+                            }
+                            
+                            // Get the hotel's nights array
+                            $hotel_nights = $categories['nights'] ?? [];
+                            
+                            // Calculate TOTAL services (nights + early check-in + late checkout)
+                            $total_services = 0;
+                            if (is_array($hotel_nights)) {
+                                $total_services = count(array_filter($hotel_nights, function($n) {
+                                    return $n !== null && $n !== '' && $n !== false;
+                                }));
+                            } elseif ($hotel_nights > 0) {
+                                $total_services = $hotel_nights;
+                            }
+                            
+                            foreach ($categories as $cat => $occupancies) {
+                                if (!is_array($occupancies) || $cat === 'nights') continue;
+
+                                foreach ($occupancies as $occ) {
+                                    $occ_arr = explode('__', $occ);
+                                    $occ_type = trim(str_ireplace("Occupancy", "", $occ_arr[0] ?? ''));
+                                    $occ_total_cost = floatval($occ_arr[1] ?? 0);
+                                    
+                                    // Calculate cost per service (night/early check-in/late checkout)
+                                    $cost_per_service = $total_services > 0 ? $occ_total_cost / $total_services : 0;
+                                    
+                                    // ✅ बदला हुआ लॉजिक: services_in_package की गणना
+                                    $services_in_package = 0;
+                                    $services_in_package += $night_count;
+                                    
+                                    // ✅ होटल नाम से तुलना करें (रात संख्या से नहीं)
+                                    if ($hotel_name === $first_night_hotel && $has_early_checkin) {
+                                        $services_in_package += 1;
+                                    }
+                                    if ($hotel_name === $last_night_hotel && $has_late_checkout) {
+                                        $services_in_package += 1;
+                                    }
+                                    
+                                    $total_cost_for_package = $cost_per_service * $services_in_package;
+
+                                    // Store room category information
+                                    if (!isset($hotel_room_occupancies[$hotel_name][$occ_type])) {
+                                        $hotel_room_occupancies[$hotel_name][$occ_type] = [];
+                                    }
+                                    
+                                    if (!in_array($cat, $hotel_room_occupancies[$hotel_name][$occ_type])) {
+                                        $hotel_room_occupancies[$hotel_name][$occ_type][] = $cat;
+                                    }
+
+                                    // Add to hotel-wise costs
+                                    if (!isset($hotel_wise_costs[$hotel_name][$occ_type])) {
+                                        $hotel_wise_costs[$hotel_name][$occ_type] = 0;
+                                    }
+                                    $hotel_wise_costs[$hotel_name][$occ_type] += $total_cost_for_package;
+
+                                    // Add to merged costs (total for all hotels in package)
+                                    if (!isset($merged_costs[$occ_type])) {
+                                        $merged_costs[$occ_type] = 0;
+                                    }
+                                    $merged_costs[$occ_type] += $total_cost_for_package;
+                                }
+                            }
+                        }
+
+                        // ✅ अब $packages[] में वही $first_night_hotel और $last_night_hotel जोड़ें
+                        $package_nights = count($combo); // base nights (one per night in combo)
+
+                        // Add extra for early check‑in if the first night hotel has it
+                        if ($first_night_hotel && isset($hotels_in_package[$first_night_hotel])) {
+                            $first_hotel_data = $hotels_in_package[$first_night_hotel]['data'];
+                            if (!empty($first_hotel_data['has_early_checkin'])) {
+                                $package_nights += 1;
+                            }
+                        }
+
+                        // Add extra for late checkout if the last night hotel has it
+                        if ($last_night_hotel && isset($hotels_in_package[$last_night_hotel])) {
+                            $last_hotel_data = $hotels_in_package[$last_night_hotel]['data'];
+                            if (!empty($last_hotel_data['has_late_checkout'])) {
+                                $package_nights += 1;
+                            }
+                        }
+
+                        $packages[] = [
+                            // 'name' => 'Package ' . $package_index++,
+                            'name' => 'Package ' . $package_index++ . ' <span style="color: red;">(' . $package_nights . 'N)</span>',
+                            'rating' => $rating,
+                            'hotels' => $combo,
+                            'merged_costs' => $merged_costs,
+                            'hotel_wise_costs' => $hotel_wise_costs,
+                            'hotel_room_occupancies' => $hotel_room_occupancies,
+                            'first_night_hotel' => $first_night_hotel,
+                            'last_night_hotel'  => $last_night_hotel 
+                        ];
+                    }
+                }
+            }
+        // ============================================================
+            // REMOVE ONLY DUPLICATE PACKAGES
+            // Same packages -> keep only one
+            // Different packages -> keep all
+            // ============================================================
+
+            $unique_packages = [];
+            $seen_package_signatures = [];
+
+            foreach ($packages as $package) {
+
+                $signature_data = [];
+
+                if (!empty($package['hotels']) && is_array($package['hotels'])) {
+
+                    foreach ($package['hotels'] as $hotel) {
+
+                        $signature_data[] = [
+                            'name'       => $hotel['name'] ?? '',
+                            'rating'     => $hotel['rating'] ?? '',
+                            'night_no'   => $hotel['night_no'] ?? '',
+                            'hotel_id'   => $hotel['categories']['hotel_id'] ?? '',
+                            'hotel_city' => $hotel['categories']['hotel_city'] ?? '',
+                            'nights'     => $hotel['categories']['nights'] ?? [],
+                            'categories' => $hotel['categories'] ?? [],
+                        ];
+                    }
+                }
+
+                // Make order consistent
+                usort($signature_data, function ($a, $b) {
+
+                    $nightA = (int) $a['night_no'];
+                    $nightB = (int) $b['night_no'];
+
+                    if ($nightA === $nightB) {
+                        return strcmp(
+                            (string) $a['name'],
+                            (string) $b['name']
+                        );
+                    }
+
+                    return $nightA <=> $nightB;
+                });
+
+                // Create unique signature
+                $package_signature = md5(
+                    json_encode(
+                        $signature_data,
+                        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                    )
+                );
+
+                // Only add package if this exact package
+                // has not already been added
+                if (!isset($seen_package_signatures[$package_signature])) {
+
+                    $seen_package_signatures[$package_signature] = true;
+
+                    $unique_packages[] = $package;
+                }
+            }
+
+            // Replace packages with unique packages only
+            $packages = $unique_packages;
+            // Check if we have any CNB/CWB occupancies across all packages
+            $has_cnb_occupancies = false;
+            $has_cwb_occupancies = false;
+            
+            foreach ($packages as $pkg) {
+                foreach ($pkg['merged_costs'] as $type => $cost) {
+                    if (stripos($type, 'CNB') !== false) {
+                        $has_cnb_occupancies = true;
+                    }
+                    if (stripos($type, 'CWB') !== false) {
+                        $has_cwb_occupancies = true;
+                    }
+                }
+            }
+        
+            $all_occupancy_types = ['Single', 'Double', 'Triple', 'Quad', 'Quint', 'Sext'];
+            $available_occupancy_types = [];
+            
+            if($total_child_persons > 0 && $has_cnb_occupancies) {
+                $all_occupancy_types[] = 'CNB';
+            }
+            if($total_child_persons > 0 && $has_cwb_occupancies) {
+                $all_occupancy_types[] = 'CWB';
+            }
+            
+            
+            
+            // --- NEW: Build price map for sorting occupancy types ---
+            $occupancy_price_map = [];
+            foreach ($all_occupancy_types as $type) {
+                $occupancy_price_map[$type] = PHP_FLOAT_MAX; // start high
+            }
+
+            foreach ($packages as $pkg) {
+                foreach ($all_occupancy_types as $type) {
+                    if (isset($pkg['merged_costs'][$type]) && $pkg['merged_costs'][$type] >= 0) {
+                        $base_cost = $pkg['merged_costs'][$type];
+                        // Apply markup (same logic as later in table)
+                        $base_cost += ($base_cost * ($markup_percentage / 100));
+                        // Add land package cost
+                        if (stripos($type, 'CNB') !== false || stripos($type, 'CWB') !== false) {
+                            $add_total = $grand_total_child_pp;
+                        } else {
+                            $add_total = $grand_total_pp;
+                        }
+                        $total = $base_cost + $add_total;
+                        $total = $total / $currency; // convert to display currency
+                        // Keep the minimum cost across packages for this occupancy type
+                        if ($total < $occupancy_price_map[$type]) {
+                            $occupancy_price_map[$type] = $total;
+                        }
+                    }
+                }
+            }
+
+            // Sort occupancy types by price (ascending), exclude any that have no valid price
+            $sorted_occupancy_types = [];
+            foreach ($all_occupancy_types as $type) {
+                if ($occupancy_price_map[$type] < PHP_FLOAT_MAX) {
+                    $sorted_occupancy_types[$type] = $occupancy_price_map[$type];
+                }
+            }
+            uasort($sorted_occupancy_types, function($a, $b) {
+                return $a <=> $b;
+            });
+            $all_occupancy_types = array_keys($sorted_occupancy_types);
+
+            // Now build available_occupancy_types in this sorted order
+            $available_occupancy_types = [];
+            foreach ($all_occupancy_types as $type) {
+                $available_occupancy_types[$type] = true;
+            }
+            
+            $cost_header_text = !empty($hotel_markup_percentage) ? 'Cost Per Room / Night' : 'Cost Per Person';
+            
+            $cost_html .= '<table border="1" cellpadding="6" cellspacing="0" style="border:2px solid black !important;width:100%; border-collapse:collapse; text-align:left;">';
+        
+            // First header row
+            $cost_html .= '<tr style="background:#d6d8d9; font-weight:bold;">';
+            $cost_html .= '<th rowspan="3" style="background:#b8b8b8 !important;">Package</th>';
+            $cost_html .= '<th rowspan="3" style="background:#b8b8b8 !important;">Hotel</th>';
+            $cost_html .= '<th colspan="' . (count($available_occupancy_types) * 2) . '" style="text-align:center;background:#ecc900ff !important;">' . $cost_header_text . '</th>';
+            $cost_html .= '</tr>';
+        
+            // Second header row
+            $cost_html .= '<tr style="background:#d6d8d9; font-weight:bold;">';
+            foreach (array_keys($available_occupancy_types) as $type) {
+                $display_type = ($type === 'Double') ? 'Double/Twin' : $type;
+                $cost_html .= '<th colspan="2">' . $display_type . '</th>';
+            }
+            $cost_html .= '</tr>';
+        
+            // Third header row
+            $cost_html .= '<tr style="background:#d6d8d9; font-weight:bold;">';
+            foreach (array_keys($available_occupancy_types) as $type) {
+                $cost_html .= '<th style="white-space: nowrap !important;">Room Category</th>';
+                $cost_html .= '<th style="background-color:#ecc900ff;">Cost</th>';
+            }
+            $cost_html .= '</tr>';
+        
+            $package_count = count($packages);
+            $current_package = 0;
+            
+            $cleanPackageName = function($name){
+                $name = trim(strip_tags((string)$name));
+                return preg_match('/Package\s*(\d+)/i', $name, $m) ? 'Package '.(int)$m[1] : trim(preg_replace('/\s+/', ' ', $name));
+            };
+
+            $package_reduced_margins_lookup = [];
+            $hotel_reduced_margins_lookup = [];
+
+            foreach($reduced_margins as $margin){
+                $margin_type = trim($margin['type'] ?? '');
+                $hotel = trim($margin['hotel'] ?? '');
+                $occupancy = trim(str_ireplace('Occupancy', '', $margin['occupancy'] ?? ''));
+                $value = floatval($margin['value'] ?? 0);
+
+                if($margin_type === 'package_adult'){
+                    $package = $cleanPackageName($margin['package'] ?? '');
+                    $package_reduced_margins_lookup[$package.'|'.$hotel.'|'.$occupancy] = $value;
+                }elseif(in_array($margin_type, ['adult','cnb','cwb'], true)){
+                    $hotel_reduced_margins_lookup[$hotel.'|'.$occupancy] = $value;
+                }
+            }
+                
+            $land_adult_reduced = 0;
+            $land_child_reduced = 0;
+            foreach ($reduced_land_margins as $margin) {
+                if ($margin['type'] == 'land_adult') {
+                    $land_adult_reduced = floatval($margin['value']);
+                } elseif ($margin['type'] == 'land_child') {
+                    $land_child_reduced = floatval($margin['value']);
+                }
+            }
+            
+            // ================= SORT PACKAGES LOWEST PRICE FIRST 07_july_2026 =================
+
+            $to_number = function ($value) {
+                if ($value === null || $value === '') {
+                    return 0;
+                }
+            
+                return (float) str_replace(',', '', $value);
+            };
+            
+            $currency_num = $to_number($currency ?? 1);
+            
+            if ($currency_num <= 0) {
+                $currency_num = 1;
+            }
+            
+            $markup_num               = $to_number($markup_percentage ?? 0);
+            $hotel_markup_num         = $to_number($hotel_markup_percentage ?? 0);
+            $grand_total_pp_num       = $to_number($grand_total_pp ?? 0);
+            $grand_total_child_pp_num = $to_number($grand_total_child_pp ?? 0);
+            
+            $sort_occupancy_types = array_keys($available_occupancy_types);
+            
+            $get_first_hotel_name_for_margin = function ($pkg) {
+                if (!empty($pkg['hotels']) && is_array($pkg['hotels'])) {
+                    $first_hotel = reset($pkg['hotels']);
+                    $hotel_identifier = $first_hotel['name'] ?? '';
+            
+                    $clean_name = strstr($hotel_identifier, '_', true);
+            
+                    return !empty($clean_name) ? $clean_name : $hotel_identifier;
+                }
+            
+                return '';
+            };
+            
+            $get_package_sort_cost = function($pkg) use($sort_occupancy_types,$hotel_markup_num,$markup_num,$currency_num,$grand_total_pp_num,$grand_total_child_pp_num,$package_reduced_margins_lookup,$hotel_reduced_margins_lookup,$to_number,$get_first_hotel_name_for_margin,$cleanPackageName){
+                $best_cost = PHP_FLOAT_MAX;
+            
+                foreach ($sort_occupancy_types as $type) {
+            
+                    /*
+                     * CASE 1:
+                     * Cost Per Room / Night
+                     */
+                    if ($hotel_markup_num > 0) {
+            
+                        if (empty($pkg['hotel_wise_costs']) || !is_array($pkg['hotel_wise_costs'])) {
+                            continue;
+                        }
+            
+                        $package_room_total = 0;
+                        $has_valid_cost = false;
+            
+                        foreach ($pkg['hotel_wise_costs'] as $hotel_identifier => $hotel_costs) {
+            
+                            if (!isset($hotel_costs[$type])) {
+                                continue;
+                            }
+            
+                            $base_cost = $to_number($hotel_costs[$type]);
+            
+                            if ($base_cost <= 0) {
+                                continue;
+                            }
+            
+                            $base_cost += ($base_cost * ($hotel_markup_num / 100));
+                            $final_cost = $base_cost / $currency_num;
+            
+                            $clean_hotel_name = strstr($hotel_identifier, '_', true);
+                            $clean_hotel_name = !empty($clean_hotel_name) ? $clean_hotel_name : $hotel_identifier;
+            
+                            $package_key = $cleanPackageName($pkg['name'] ?? '').'|'.trim($clean_hotel_name).'|'.trim(str_ireplace('Occupancy', '', $type));
+                            $reduced_margin = $package_reduced_margins_lookup[$package_key] ?? 0;
+            
+                            if ($reduced_margin == 0) {
+                                $individual_key = $clean_hotel_name . '|' . $type;
+                                $reduced_margin = $hotel_reduced_margins_lookup[$individual_key] ?? 0;
+                            }
+            
+                            $final_cost -= $to_number($reduced_margin);
+            
+                            if ($final_cost > 0) {
+                                $package_room_total += $final_cost;
+                                $has_valid_cost = true;
+                            }
+                        }
+            
+                        if ($has_valid_cost && $package_room_total < $best_cost) {
+                            $best_cost = $package_room_total;
+                        }
+            
+                    }
+            
+                    /*
+                     * CASE 2:
+                     * Cost Per Person
+                     */
+                    else {
+            
+                        if (!isset($pkg['merged_costs'][$type])) {
+                            continue;
+                        }
+            
+                        $base_cost = $to_number($pkg['merged_costs'][$type]);
+            
+                        if ($base_cost <= 0) {
+                            continue;
+                        }
+            
+                        $base_cost += ($base_cost * ($markup_num / 100));
+            
+                        if (stripos($type, 'CNB') !== false || stripos($type, 'CWB') !== false) {
+                            $add_total = $grand_total_child_pp_num;
+                        } else {
+                            $add_total = $grand_total_pp_num;
+                        }
+            
+                        $final_cost = ($base_cost + $add_total) / $currency_num;
+            
+                        $first_hotel_name = $get_first_hotel_name_for_margin($pkg);
+            
+                        if (!empty($first_hotel_name)) {
+                            $package_key = $cleanPackageName($pkg['name'] ?? '').'|'.trim($first_hotel_name).'|'.trim(str_ireplace('Occupancy', '', $type));
+                            $package_reduced = $package_reduced_margins_lookup[$package_key] ?? 0;
+                            $final_cost -= $to_number($package_reduced);
+                        }
+            
+                        if ($final_cost > 0 && $final_cost < $best_cost) {
+                            $best_cost = $final_cost;
+                        }
+                    }
+                }
+            
+                return $best_cost;
+            };
+            
+            usort($packages, function ($a, $b) use ($get_package_sort_cost) {
+                $price_a = $get_package_sort_cost($a);
+                $price_b = $get_package_sort_cost($b);
+            
+                if ($price_a == $price_b) {
+                    return 0;
+                }
+            
+                return $price_a <=> $price_b;
+            });
+            
+            /*
+            * Lowest price package ko Package 1,
+            * second lowest ko Package 2,
+            * third ko Package 3 banayega
+            */
+            foreach ($packages as $index => &$pkg) {
+
+                if (!isset($pkg['_original_name'])) {
+                    $pkg['_original_name'] = $pkg['name'];
+                }
+
+                $nights_html = '';
+
+                if (preg_match('/<span[^>]*>\s*\([^)]+\)\s*<\/span>/i', $pkg['name'], $match)) {
+                    $nights_html = ' ' . $match[0];
+                }
+
+                $pkg['name'] = 'Package ' . ($index + 1) . $nights_html;
+            }
+
+            unset($pkg);
+            
+            $package_count = count($packages);
+            $current_package = 0;
+            
+            // ================= SORT PACKAGES LOWEST PRICE FIRST END  07_july_2026 =================
+            
+            
+            foreach ($packages as $pkg) {
+                $current_package++;
+                
+                // Group same hotel names across multiple nights
+                $grouped_hotels = [];
+                $hotel_extras = [];
+                
+                foreach ($pkg['hotels'] as $hotel) {
+                    $name = $hotel['name'];
+                    $hotel_id = $hotel['categories']['hotel_id'] ?? '';
+                    $rating = $hotel['rating'];
+                    $night_no = $hotel['night_no'];
+                    $has_early_checkin = $hotel['has_early_checkin'] ?? false;
+                    $has_late_checkout = $hotel['has_late_checkout'] ?? false;
+                    $city = $hotel['categories']['hotel_city'] ?? '';
+                    
+        
+                    if (!isset($grouped_hotels[$name])) {
+                        $grouped_hotels[$name] = [
+                            'name' => $name,
+                            'hotel_id' => $hotel_id ?? null,
+                            'rating' => $rating,
+                            'nights' => [],
+                            'city'   => $city,
+                        ];
+                        $hotel_extras[$name] = [
+                            'early_checkin' => $has_early_checkin,
+                            'late_checkout' => $has_late_checkout
+                        ];
+                    }
+                    $grouped_hotels[$name]['nights'][] = $night_no;
+                }
+        
+                $rowspan = count($grouped_hotels);
+                $first_row = true;
+        
+                // Check for each occupancy type if all hotels have same room categories
+                $same_room_categories = [];
+                foreach (array_keys($available_occupancy_types) as $type) {
+                    $all_categories_same = true;
+                    $first_hotel_categories = null;
+                    
+                    foreach ($grouped_hotels as $hotel_name => $hotel_data) {
+                        $current_categories = $pkg['hotel_room_occupancies'][$hotel_name][$type] ?? [];
+                        $normalized_categories = array_map(function($cat) {
+                            if (strpos($cat, '(') !== false) {
+                                $parts = explode('(', $cat, 2);
+                                return trim($parts[0]);
+                            }
+                            return trim($cat);
+                        }, $current_categories);
+                        sort($normalized_categories);
+                        
+                        if ($first_hotel_categories === null) {
+                            $first_hotel_categories = $normalized_categories;
+                        } else {
+                            if ($first_hotel_categories != $normalized_categories) {
+                                $all_categories_same = false;
+                                break;
+                            }
+                        }
+                    }
+                    $same_room_categories[$type] = $all_categories_same;
+                }
+        
+                $hotel_index = 0;
+                $total_hotels = count($grouped_hotels);
+                foreach ($grouped_hotels as $hotel_name => $hotel_data) {
+                    $hotel_index++;
+                    // $name = $hotel_data['name'];
+                    $hotel_id = $hotel_data['hotel_id'];
+                    $name = strstr($hotel_data['name'], '_', true);
+                    $rating = $hotel_data['rating'];
+                    $city = $hotel_data['city'] ?? '';
+                    $hotel_info = $this->get_hotel_bouting_resort_status($name);
+                    if ($hotel_info && isset($hotel_info['booting_resort']) && $hotel_info['booting_resort'] == 'yes') {
+                        $stars = 'BR';
+                    } else {
+                        $rating_value = (int) str_replace('_', ' ', $rating);
+                        $stars = '<span style="color: #ecc900ff;font-size:20px;">';
+                        
+                        for ($i = 1; $i <= 5; $i++) {
+                            if ($i <= $rating_value) {
+                                $stars .= '★';
+                            }
+                        }
+                        $stars .= '</span>';
+                    }
+                    
+                    $unique_nights = array_unique($hotel_data['nights']);
+                    $total_nights = count(array_filter($unique_nights, fn($n) => $n > 0));
+
+                    $extras = [];
+                    if ($hotel_name === $pkg['first_night_hotel'] && $hotel_extras[$hotel_name]['early_checkin']) {
+                        $extras[] = 'Guaranteed Early Check‑In Included';
+                    }
+                    if ($hotel_name === $pkg['last_night_hotel'] && $hotel_extras[$hotel_name]['late_checkout']) {
+                        $extras[] = 'Late Checkout';
+                        $total_nights += 1; 
+                    }
+
+                    $nights_text = '(' . $total_nights . 'N)';
+                    if (!empty($extras)) {
+                        $nights_text = '(' . implode(' + ', $extras) . ') '.$nights_text;
+                    }
+                        
+                    
+                    $cost_html .= '<tr>';
+                    if ($first_row) {
+                        $cost_html .= '<td rowspan="' . $rowspan . '" style="font-weight:bold;background-color: #c7c8c9;">' . $pkg['name'] . '</td>';
+                    }
+                    
+                    // $hotel_data = $this->get_hotel_id_by_name($name);
+                    $hotel_data = $this->get_hotel_id_by_name_new($hotel_id);
+
+                    $hotelID = 0;
+                    if (is_object($hotel_data)) {
+                        // If $hotel_data is the object, its id property should be scalar
+                        $hotelID = property_exists($hotel_data, 'id') ? $hotel_data->id : 0;
+                    } elseif (is_array($hotel_data)) {
+                        $hotelID = isset($hotel_data['id']) ? $hotel_data['id'] : 0;
+                    } else {
+                        $hotelID = (int) $hotel_data;
+                    }
+
+                    // Ensure it's a string for base64_encode
+                    $hotelID_str = (string) $hotelID;
+                    $enquiry_id_val = 0;
+                    $quotation_id_val = 0;
+
+                    if (is_object($enquiry_id)) {
+                        $enquiry_id_val = property_exists($enquiry_id, 'id') ? $enquiry_id->id : (property_exists($enquiry_id, 'enquiry_id') ? $enquiry_id->enquiry_id : 0);
+                    } elseif (is_array($enquiry_id)) {
+                        $enquiry_id_val = isset($enquiry_id['id']) ? $enquiry_id['id'] : (isset($enquiry_id['enquiry_id']) ? $enquiry_id['enquiry_id'] : 0);
+                    } else {
+                        $enquiry_id_val = (int) $enquiry_id;
+                    }
+
+                    if (is_object($quotation_id)) {
+                        $quotation_id_val = property_exists($quotation_id, 'id') ? $quotation_id->id : (property_exists($quotation_id, 'quotation_id') ? $quotation_id->quotation_id : 0);
+                    } elseif (is_array($quotation_id)) {
+                        $quotation_id_val = isset($quotation_id['id']) ? $quotation_id['id'] : (isset($quotation_id['quotation_id']) ? $quotation_id['quotation_id'] : 0);
+                    } else {
+                        $quotation_id_val = (int) $quotation_id;
+                    }
+
+                    $tracking_url = base_url("track-hotel-click?hotel_id=" . base64_encode($hotelID_str) . "&enquiry_id=" . $enquiry_id_val . "&quotation_id=" . $quotation_id_val);
+                    if ($hotel_data && !empty($hotel_data->image)) {
+                        // Has image → create clickable link
+                        $hotel_link = '<a href="' . $tracking_url . '" target="_blank" class="hotel-link" title="Click here to view the hotel page">' . $name . '</a>';
+                    } else {
+                        // No image → plain text
+                        $hotel_link = '<span title="This Facility is not Available">' . $name . '</span>';
+                    }
+        
+        
+                    $display_city = '';
+                    if (!empty($city)) {
+                        $display_city = ($city === 'Satte') ? 'Kolsai' : $city;
+                    }
+
+                    $cost_html .= '<td style="background-color: #d6d8d9;"> ' .$nights_text . ' <span style="color:#6060a9;font-weight:bold;">' . $hotel_link . ' (' . $display_city . ')</span> '. $stars .'</td>';
+        
+                    // For each occupancy type
+                    foreach (array_keys($available_occupancy_types) as $type) {
+                        // Room Category column
+                        if ($same_room_categories[$type]) {
+                            if ($first_row) {
+                                $cost_html .= '<td style="background-color: #d6d8d9;" rowspan="' . $rowspan . '">';
+                                $room_categories = $pkg['hotel_room_occupancies'][$hotel_name][$type] ?? [];
+                                if (!empty($room_categories)) {
+                                    foreach ($room_categories as $category) {
+                                        if (strpos($category, '_nights_') !== false) {
+                                                // Remove the _nights_XX suffix
+                                                $category_parts = explode('_nights_', $category, 2);
+                                                $clean_category = $category_parts[0];
+                                                
+                                                // Also check if there are still underscores that should be spaces
+                                                if (strpos($clean_category, '_') !== false && strpos($clean_category, ' ') === false) {
+                                                    // Replace underscores with spaces for readability
+                                                    $clean_category = str_replace('_', ' ', $clean_category);
+                                                }
+                                            } else {
+                                                $clean_category = $category;
+                                            }
+                                        if (strpos($category, '(') !== false) {
+                                            $parts = explode('(', $category, 2);
+                                            $prefix = trim($parts[0]);
+                                            // $cost_html .= $prefix . '<br>';
+                                            $category_id = $this->get_category_id_by_name($category, $hotel_id);
+                                                if ($category_id > 0) {
+                                                    // Category has description and image, show link
+                                                    $cost_html .= '<a href="'.base_url('room-category-page/'.base64_encode($category_id)).'" target="_blank" style="color: #131313ff; text-decoration: underline;text-decoration-color: blue;" title="Click to view category details">';
+                                                    $cost_html .= $prefix . '<br>';
+                                                    $cost_html .= '</a>';
+                                                }    
+                                                else{
+                                                    $cost_html .= $prefix . '<br>';
+                                                }
+                                        } else {
+                                            // $cost_html .= $category . '<br>';
+                                            $category_id = $this->get_category_id_by_name($category, $hotel_id);
+                                                if ($category_id > 0) {
+                                                    // Category has description and image, show link
+                                                    $cost_html .= '<a href="'.base_url('room-category-page/'.base64_encode($category_id)).'" target="_blank" style="color: #131313ff; text-decoration: underline;text-decoration-color: blue;" title="Click to view category details">';
+                                                    $cost_html .= $clean_category . '<br>';
+                                                    $cost_html .= '</a>';
+                                                }else{
+                                                    $cost_html .= $clean_category . '<br>';
+                                                }
+                                        }
+                                    }
+                                } else {
+                                    $cost_html .= 'NA';
+                                }
+                                $cost_html .= '</td>';
+                            }
+                        } else {
+                            $cost_html .= '<td style="background-color: #d6d8d9;">';
+                            $room_categories = $pkg['hotel_room_occupancies'][$hotel_name][$type] ?? [];
+                            if (!empty($room_categories)) {
+                                foreach ($room_categories as $category) {
+                                    if (strpos($category, '_nights_') !== false) {
+                                                // Remove the _nights_XX suffix
+                                                $category_parts = explode('_nights_', $category, 2);
+                                                $clean_category = $category_parts[0];
+                                                
+                                                // Also check if there are still underscores that should be spaces
+                                                if (strpos($clean_category, '_') !== false && strpos($clean_category, ' ') === false) {
+                                                    // Replace underscores with spaces for readability
+                                                    $clean_category = str_replace('_', ' ', $clean_category);
+                                                }
+                                            } else {
+                                                $clean_category = $category;
+                                            }
+                                    if (strpos($clean_category, '(') !== false) {
+                                        $parts = explode('(', $clean_category, 2);
+                                        $prefix = trim($parts[0]);
+                                        // $cost_html .= $prefix . '<br>';
+                                        $category_id = $this->get_category_id_by_name($category, $hotel_id);
+                                        if ($category_id > 0) {
+                                            // Category has description and image, show link
+                                            $cost_html .= '<a href="'.base_url('room-category-page/'.base64_encode($category_id)).'" target="_blank" style="color: #131313ff; text-decoration: underline;text-decoration-color: blue;" title="Click to view category details">';
+                                            $cost_html .= $prefix . '<br>';
+                                            $cost_html .= '</a>';
+                                        }    
+                                        else{
+                                            $cost_html .= $prefix . '<br>';
+                                        }
+                                    } 
+                                    else {
+                                        // $cost_html .= $category . '<br>';
+                                        $category_id = $this->get_category_id_by_name($category, $hotel_id);
+                                        if ($category_id > 0) {
+                                            // Category has description and image, show link
+                                            $cost_html .= '<a href="'.base_url('room-category-page/'.base64_encode($category_id)).'" target="_blank" style="color: #131313ff; text-decoration: underline;text-decoration-color: blue;" title="Click to view category details">';
+                                            $cost_html .= $clean_category . '<br>';
+                                            $cost_html .= '</a>';
+                                        }else{
+                                            $cost_html .= $clean_category . '<br>';
+                                        }
+                                    }
+                                }
+                            } else {
+                                $cost_html .= 'NA';
+                            }
+                            $cost_html .= '</td>';
+                        }
+                        
+                        // Cost column
+                        if (!empty($hotel_markup_percentage)) {
+                            // Cost Per Room / Night - show individual hotel cost
+                            $cost_html .= '<td style="background-color: #d6d8d9;">';
+                            $hotel_costs = $pkg['hotel_wise_costs'][$hotel_name] ?? [];
+                            $base_cost = isset($hotel_costs[$type]) ? $hotel_costs[$type] : 0;
+                            
+                            $base_cost += ($base_cost * ($hotel_markup_percentage / 100));
+                            $final_total_cost = $base_cost / $currency;
+                            
+                            $cleanType = trim(str_ireplace('Occupancy', '', $type));
+                            $marginPackageName = $cleanPackageName($pkg['_original_name'] ?? $pkg['name'] ?? '');
+                            $lookup_key = $marginPackageName.'|'.trim($name).'|'.$cleanType;
+                            $reduced_margin = floatval($package_reduced_margins_lookup[$lookup_key] ?? 0);
+
+                            if($reduced_margin == 0){
+                                $individual_key = trim($name).'|'.$cleanType;
+                                $reduced_margin = floatval($hotel_reduced_margins_lookup[$individual_key] ?? 0);
+                            }
+
+                            $final_total_cost -= $reduced_margin;
+                            
+                            if ($final_total_cost > 0) {
+                                $cost_html .= '$' . number_format($final_total_cost, 0);
+                            } else {
+                                $cost_html .= '-';
+                            }
+                            $cost_html .= '</td>';
+                        } 
+                        else 
+                        {
+                            // Cost Per Person - Show package total cost
+                            if ($first_row) {
+                                $cost_html .= '<td style="background-color: #d6d8d9;" rowspan="' . $rowspan . '">';
+                                
+                                $base_cost = isset($pkg['merged_costs'][$type]) ? $pkg['merged_costs'][$type] : 0;
+                                
+                                // Apply markup percentage (you commented this out)
+                                $base_cost += ($base_cost * ($markup_percentage / 100));
+                                
+                                // Add land package cost
+                                if (stripos($type, 'CNB') !== false || stripos($type, 'CWB') !== false) {
+                                    $add_total = $grand_total_child_pp;
+                                } else {
+                                    $add_total = $grand_total_pp;
+                                }
+                                
+                                $final_cost = ($base_cost + $add_total) / $currency;
+                                
+                                $cleanType = trim(str_ireplace('Occupancy', '', $type));
+                                $marginPackageName = $cleanPackageName($pkg['_original_name'] ?? $pkg['name'] ?? '');
+                                $package_lookup_key = $marginPackageName.'|'.trim($name).'|'.$cleanType;
+                                $package_reduced = floatval($package_reduced_margins_lookup[$package_lookup_key] ?? 0);
+                                $final_cost -= $package_reduced;
+                                
+                                if ($final_cost > 0) {
+                                    $cost_html .= '$' . number_format($final_cost, 0);
+                                } else {
+                                    $cost_html .= '-';
+                                }
+                                $cost_html .= '</td>';
+                            }
+                        }
+                    }
+        
+                    if ($first_row) {
+                        $first_row = false;
+                    }
+                    $cost_html .= '</tr>';
+                }
+                
+                if ($current_package < $package_count || empty($hotel_markup_percentage)) {
+                    $total_columns = 2 + (count($available_occupancy_types) * 2);
+                    $cost_html .= '<tr><td colspan="' . $total_columns . '" style="border-bottom: 4px solid #0c0c0cff; padding: 0; line-height: 4px;"></td></tr>';
+                }
+            }
+            
+            // Add Land Package Cost rows
+            if(!empty($hotel_markup_percentage)){
+                // $total_cols = 2 + (count($available_occupancy_types) * 2);
+                // $converted_other = ($currency > 0) 
+                //     ? number_format($grand_total_pp / $currency, 0) 
+                //     : '0';
+                // $converted_other -= $land_adult_reduced;    
+                $total_cols = 2 + (count($available_occupancy_types) * 2);
+
+                // Make sure all values are numeric before calculation
+                $grand_total_pp_numeric = (float) str_replace(',', '', $grand_total_pp ?? 0);
+                $currency_numeric = (float) str_replace(',', '', $currency ?? 0);
+                $land_adult_reduced_numeric = (float) str_replace(',', '', $land_adult_reduced ?? 0);
+            
+                // First calculate numeric value, do not use number_format here
+                $converted_other = ($currency_numeric > 0)
+                    ? round($grand_total_pp_numeric / $currency_numeric, 0)
+                    : 0;
+            
+                // Now subtract reduced amount
+                $converted_other = $converted_other - $land_adult_reduced_numeric;
+            
+                // Optional: prevent negative value
+                if ($converted_other < 0) {
+                    $converted_other = 0;
+                }
+            
+                // Use this only for display
+                $converted_other = number_format($converted_other, 0);
+                $cost_html .= '<tr>
+                    <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Person</th>
+                    <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other.'</td>
+                </tr>';
+                
+                if($total_child_persons > 0 && ($has_cnb_occupancies || $has_cwb_occupancies)){
+                    $converted_other_child = ($currency > 0) 
+                        ? number_format($grand_total_child_pp / $currency, 0) 
+                        : '0';
+                    $converted_other_child -= $land_child_reduced;       
+                    $cost_html .= '<tr>
+                        <th style="background-color:#d6d8d9;color:red;">Land Package Cost Per Child</th>
+                        <td colspan="'.$total_cols.'" style="background-color:#d6d8d9;color:red;"> $'.$converted_other_child.'</td>
+                    </tr>';
+                }
+            }
+            $cost_html .= '</table>';
+        }
+            
+      
+
+        return $cost_html;
+   
+    }
+    
+    public function get_cost_table_ajax()
+    {
+        $this->load->helper('url');
+        
+        // Get POST data
+        $postData = $this->input->post();
+        
+        if (empty($postData['enquiry_id'])) {
+            echo json_encode(['error' => 'Enquiry ID is required']);
+            return;
+        }
+        
+        $data['form'] = $postData;
+        $enquiry_id = $postData['enquiry_id'];
+        
+        // Get enquiry data (similar to get_email_body)
+        $where = 'enquiry.id = "' . $this->db->escape_str($enquiry_id) . '"';
+        $join = [
+            [
+                'type' => 'LEFT',
+                'join_table' => 'company_details',
+                'condition' => 'company_details.company_id = enquiry.company_details_id'
+            ],
+            [
+                'type' => 'LEFT',
+                'join_table' => 'company',
+                'condition' => 'company.company_id = enquiry.company_id'
+            ],
+        ];
+        
+        $enquiryData = $this->common_model->get_data('enquiry', '', '', '*', $where, '', false, $join);
+        
+        if (empty($enquiryData)) {
+            echo json_encode(['error' => 'No enquiry found']);
+            return;
+        }
+        
+        $data['enquiry'] = $enquiryData[0];
+        $total_persons = $data['enquiry']->number_persons;
+        $total_child_persons = $data['enquiry']->number_child;
+        $data['total_persons'] = $data['enquiry']->number_persons + $data['enquiry']->number_child;
+        
+        // Get currency
+        $currency = isset($postData['roe']) ? (float)$postData['roe'] : '';
+        $data['currency'] = $currency;
+        
+        // Extract all the required data from POST
+        $total_transportation = isset($postData['final_transport']) ? (float)$postData['final_transport'] : 0;
+        $discount_bundle_price = isset($postData['discount_bundle_price']) ? (float)$postData['discount_bundle_price'] : 0;
+        $total_transportation = $total_transportation - $discount_bundle_price;
+        $guide_grand_total = isset($postData['hdn_guide_grand_total']) ? (float)$postData['hdn_guide_grand_total'] : 0;
+        
+        $mandatory_grand_total = isset($postData['hdn_mandatory_grand_total']) ? (float)$postData['hdn_mandatory_grand_total'] : 0;
+        $child_mandatory_grand_total = isset($postData['child_mandatory_grand_total']) ? (float)$postData['child_mandatory_grand_total'] : 0;
+        
+        $all_day_activities_total = isset($postData['all_day_activities_total']) ? (float)$postData['all_day_activities_total'] : 0;
+        $final_ticket_price = isset($postData['hdn_final_ticket_price']) ? (float)$postData['hdn_final_ticket_price'] : 0;
+        $all_day_child_activities_total = isset($postData['all_day_child_activities_total']) ? (float)$postData['all_day_child_activities_total'] : 0;
+        $activities_group_total = $postData['hdn_group_activity_total'] ?? '';
+        $hdn_final_child_ticket_price = isset($postData['hdn_final_child_ticket_price']) ? (float)$postData['hdn_final_child_ticket_price'] : 0;
+        $hdn_final_group_ticket_price = isset($postData['hdn_final_group_ticket_price']) ? (float)$postData['hdn_final_group_ticket_price'] : 0;
+        $grandTotalMeal = isset($postData['grandTotalMeal']) ? (float)$postData['grandTotalMeal'] : 0;
+        $childMealCost = isset($postData['childMealCost']) ? (float)$postData['childMealCost'] : 0;
+        
+        $train_child_price = isset($postData['train_child_price']) ? (float)$postData['train_child_price'] : 0;
+        $train_adult_price = isset($postData['train_adult_price']) ? (float)$postData['train_adult_price'] : 0;
+        
+        $markup_percentage = isset($postData['markup_percentage']) ? (float)$postData['markup_percentage'] : 0;
+        $hotel_markup_percentage = isset($postData['hotel_markup_percentage']) ? $postData['hotel_markup_percentage'] : '';
+        
+        $group_type = isset($postData['hdn_group_type']) ? $postData['hdn_group_type'] : 'individual';
+        $nights = isset($postData['hotel_nights']) ? (int)$postData['hotel_nights'] : 0;
+        $early_checkin = isset($postData['early_checkin']) ? $postData['early_checkin'] : 'no';
+        
+        // Hotel related data
+        $hotel_costing_category_wise = isset($postData['hotel_costing_category_wise']) ? json_decode($postData['hotel_costing_category_wise'], true) : [];
+        $hotel_names_category_wise = isset($postData['hotel_names_category_wise']) ? json_decode($postData['hotel_names_category_wise'], true) : [];
+        $hotel_room_category_names_wise = isset($postData['hotel_room_category_names_wise']) ? json_decode($postData['hotel_room_category_names_wise'], true) : [];
+        $hotel_costing_category_wise_child = isset($postData['hotel_cnb_per_person']) ? json_decode($postData['hotel_cnb_per_person'], true) : [];
+        $hotel_costing_category_wise_child_cwb = isset($postData['hotel_cwb_per_person']) ? json_decode($postData['hotel_cwb_per_person'], true) : [];
+        
+        $entrance_group_total = isset($postData['entrance_group_total']) ? (float)$postData['entrance_group_total'] : 0;
+        $entrance_adult_total = isset($postData['entrance_adult_total']) ? (float)$postData['entrance_adult_total'] : 0;
+        $entrance_child_total = isset($postData['entrance_child_total']) ? (float)$postData['entrance_child_total'] : 0;
+
+        $driver_grand_total = isset($postData['driver_grand_total']) ? (float)$postData['driver_grand_total'] : 0;
+
+        $hotel_status = isset($postData['hotel_status']) ? $postData['hotel_status'] : 'yes';
+        $saved_reduced_margins = isset($postData['saved_reduced_margins']) ? $postData['saved_reduced_margins'] : '';
+        $saved_reduced_land_margins = isset($postData['saved_reduced_land_margins']) ? $postData['saved_reduced_land_margins'] : '';
+        
+        // Generate cost table based on group type
+        $cost_html = '';
+        
+        if($hotel_status == "yes"){
+            if ($group_type == 'family') {
+                $cost_html .= $this->generate_family_cost_table(
+                    $hotel_names_category_wise,
+                    $hotel_costing_category_wise,
+                    $hotel_room_category_names_wise,
+                    $total_persons,
+                    $total_transportation,
+                    $guide_grand_total,
+                    $mandatory_grand_total,
+                    $all_day_activities_total,
+                    $final_ticket_price,
+                    $markup_percentage,
+                    $currency,
+                    $nights,
+                    $hotel_markup_percentage,
+                    $grandTotalMeal,
+                    $hdn_final_group_ticket_price,
+                    $hotel_costing_category_wise_child,
+                    $all_day_child_activities_total,
+                    $hdn_final_child_ticket_price,
+                    $total_child_persons,
+                    $hotel_costing_category_wise_child_cwb
+                );
+            } else {
+                $cost_html .= $this->generate_individual_margin_table(
+                    $hotel_costing_category_wise,
+                    $total_persons,
+                    $total_transportation,
+                    $guide_grand_total,
+                    $mandatory_grand_total,
+                    $all_day_activities_total,
+                    $final_ticket_price,
+                    $markup_percentage,
+                    $currency,
+                    $nights,
+                    $hotel_markup_percentage,
+                    $grandTotalMeal,
+                    $hdn_final_group_ticket_price,
+                    $all_day_child_activities_total,
+                    $activities_group_total,
+                    $hdn_final_child_ticket_price,
+                    $total_child_persons,
+                    $early_checkin,
+                    $saved_reduced_margins,
+                    $saved_reduced_land_margins,
+                    $entrance_group_total,
+                    $entrance_adult_total,
+                    $entrance_child_total,
+                    $train_adult_price,
+                    $train_child_price,
+                    $driver_grand_total,
+                    $child_mandatory_grand_total,
+                    $childMealCost
+                );
+            }
+        } 
+        else 
+        {
+
+            $reduced_land_margins_array = [];
+            
+            if (is_string($saved_reduced_land_margins)) {
+                $reduced_land_margins_array = json_decode($saved_reduced_land_margins, true) ?? [];
+            } elseif (is_array($saved_reduced_land_margins)) {
+                $reduced_land_margins_array = $saved_reduced_land_margins;
+            }
+
+            $grand_total_other = $total_transportation + $guide_grand_total + $all_day_activities_total + $mandatory_grand_total + $final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price + $entrance_adult_total + $entrance_group_total + $train_adult_price + $driver_grand_total + 
+                    $activities_group_total;
+            $markup_percentage = floatval($markup_percentage);
+            $grand_total_other = ($grand_total_other * ($markup_percentage / 100));
+            $converted_other = ($currency > 0) 
+                ? round(($grand_total_other / $total_persons) / $currency) 
+                : 0;
+                
+            $adult_original_margin = ($currency > 0) ? round(($grand_total_other / $total_persons) / $currency): 0;
+            
+            $cost_html .= '<table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width:100%; text-align: left;">';
+            $cost_html .= '<tr>
+                <td style="background-color:#d6d8d9;color:red;width:50%;">Land Package Cost Per Person</td>
+                <td style="background-color:#d6d8d9;color:red;width:50%;"> $'.$converted_other.' (<span class="updated-markup">'.$markup_percentage.'%</span>)</td>
+            </tr>';
+
+            $reduced_land_adult_value = 0;
+                foreach ($reduced_land_margins_array as $margin) {
+                    if ($margin['type'] == 'land_adult') {
+                        $reduced_land_adult_value = floatval($margin['value']);
+                        break;
+                    }
+                }
+
+            $cost_html .= '<tr>
+                    <th style="background-color:#d6d8d9;color:blue;">Reduced Land Package Margin Per Person</th>
+                    <td  style="background-color:#d6d8d9;color:red;">'; 
+                        $data_attrs_land = 'data-hotel="land_package" ';
+                        $data_attrs_land .= 'data-room-category="land_package" ';
+                        $data_attrs_land .= 'data-occupancy="land_package" ';
+                        $data_attrs_land .= 'data-rating="land_package" ';
+                        $data_attrs_land .= 'data-col-index="land_adult" ';
+                        $cost_html .= '<input type="number" class="reduced-margin-input land-markup-input" ' . $data_attrs_land . ' data-type="land_adult" data-original-margin="'.$adult_original_margin.'" data-original-markup="'.$markup_percentage.'" value="'.$reduced_land_adult_value.'" style="width:100px;" min="0">
+                        
+                    </td>
+                </tr>';
+            
+            if($total_child_persons > 0){
+                $grand_total_other_child = $all_day_child_activities_total + $hdn_final_child_ticket_price + $entrance_child_total + $train_child_price + $child_mandatory_grand_total + $childMealCost;
+                $markup_percentage = floatval($markup_percentage);
+                $grand_total_other_child = ($grand_total_other_child * ($markup_percentage / 100));
+                $converted_other = ($currency > 0) 
+                    ? round(($grand_total_other_child / $total_child_persons) / $currency) 
+                    : 0;
+
+                $child_original_margin = ($currency > 0) ? round(($grand_total_other_child / $total_child_persons) / $currency) : 0;
+                $cost_html .= '<tr>
+                    <td style="background-color:#d6d8d9;color:red;width:50%;">Land Package Cost Per Child</td>
+                    <td style="background-color:#d6d8d9;color:red;width:50%;"> $'.$converted_other.' (<span class="updated-markup">'.$markup_percentage.'%</span>)</td>
+                </tr>'; 
+
+                $reduced_land_child_value = 0;
+                    foreach ($reduced_land_margins_array as $margin) {
+                        if ($margin['type'] == 'land_child') {
+                            $reduced_land_child_value = floatval($margin['value']);
+                            break;
+                        }
+                    }
+
+                $cost_html .= '<tr>
+                        <th style="background-color:#d6d8d9;color:blue;">Reduced Land Package Margin Per Child</th>
+                        <td style="background-color:#d6d8d9;color:red;">';  
+                            $data_attrs_land_child = 'data-hotel="land_package" ';
+                            $data_attrs_land_child .= 'data-room-category="land_package" ';
+                            $data_attrs_land_child .= 'data-occupancy="land_package" ';
+                            $data_attrs_land_child .= 'data-rating="land_package" ';
+                            $data_attrs_land_child .= 'data-col-index="land_child" ';
+                            $cost_html .= '<input type="number" class="reduced-margin-input land-markup-input" ' . $data_attrs_land_child . ' data-type="land_child" data-original-margin="'.$child_original_margin.'" data-original-markup="'.$markup_percentage.'" value="'.$reduced_land_child_value.'" style="width:100px;" min="0">
+                            
+                        </td>
+                    </tr>'; 
+            }
+            $cost_html .= '</table>';
+            $cost_html .= '<script>
+                function updateLandMarkup(inputEl) {
+
+                    let $input = $(inputEl);
+
+                    let reduced = parseFloat($input.val()) || 0;
+                    let originalMargin = parseFloat($input.data("original-margin"));
+                    let originalMarkup = parseFloat($input.data("original-markup"));
+
+                    if (!originalMargin || !originalMarkup) return;
+
+                    // Base cost without markup
+                    let baseCost = (originalMargin * 100) / originalMarkup;
+
+                    // Margin after reduction
+                    let newMargin = originalMargin - reduced;
+                    if (newMargin < 0) newMargin = 0;
+
+                    // Updated markup %
+                    let updatedMarkup = (newMargin / baseCost) * 100;
+
+                    // Update markup shown in cost row
+                    $input
+                        .closest("tr")
+                        .prev("tr")
+                        .find("td:eq(1) .updated-markup")
+                        .text(updatedMarkup.toFixed(1) + "%");
+                }
+
+                // ЁЯФ╣ On input change
+                $(document).on("input", ".reduced-margin-input", function () {
+                    updateLandMarkup(this);
+                });
+
+                // ЁЯФ╣ On page load (IMPORTANT for saved quotes)
+                $(document).ready(function () {
+                    $(".reduced-margin-input").each(function () {
+                        updateLandMarkup(this);
+                    });
+                });
+                </script>';
+        }
+        
+        echo json_encode(['success' => true, 'cost_html' => $cost_html]);
+    }
+
+    private function generate_individual_margin_table($hotel_costing_category_wise, $total_persons, $total_transportation, $guide_grand_total, $hdn_mandatory_grand_total, $all_day_activities_total, $hdn_final_ticket_price, $markup_percentage, $currency, $nights, $hotel_markup_percentage, $grandTotalMeal, $hdn_final_group_ticket_price, $all_day_child_activities_total,
+                    $activities_group_total, $hdn_final_child_ticket_price, $total_child_persons, $early_checkin, $saved_reduced_margins, $saved_reduced_land_margins, $entrance_group_total, $entrance_adult_total, $entrance_child_total, $train_adult_price, $train_child_price, $driver_grand_total, $child_mandatory_grand_total, $childMealCost)
+    {
+        
+        $reduced_margins_array = [];
+        $reduced_land_margins_array = [];
+
+        if (is_string($saved_reduced_margins)) {
+            $reduced_margins_array = json_decode($saved_reduced_margins, true) ?? [];
+        } elseif (is_array($saved_reduced_margins)) {
+            $reduced_margins_array = $saved_reduced_margins;
+        }
+
+        if (is_string($saved_reduced_land_margins)) {
+            $reduced_land_margins_array = json_decode($saved_reduced_land_margins, true) ?? [];
+        } elseif (is_array($saved_reduced_land_margins)) {
+            $reduced_land_margins_array = $saved_reduced_land_margins;
+        }
+
+        $original_grand_total = $total_transportation + $guide_grand_total + $all_day_activities_total + $hdn_mandatory_grand_total + $hdn_final_ticket_price + $grandTotalMeal + $hdn_final_group_ticket_price + $entrance_adult_total + $entrance_group_total + $train_adult_price + $driver_grand_total + 
+                    $activities_group_total;
+        $original_grand_total_pp = $original_grand_total / $total_persons;
+
+        // Calculate markup amount for land package (in dollars)
+        $land_package_markup_pp = $original_grand_total_pp * ($markup_percentage / 100);
+
+        if ($total_child_persons > 0) {
+            $original_grand_total_child = $all_day_child_activities_total + $hdn_final_child_ticket_price + $entrance_child_total + $train_child_price + $child_mandatory_grand_total + $childMealCost;
+            $original_grand_total_child_pp = $original_grand_total_child / $total_child_persons;
+            $land_package_markup_child_pp = $original_grand_total_child_pp * ($markup_percentage / 100);
+        }
+
+        $postData = $this->input->post();
+
+        $markup_values = [];
+        $land_package_markups = [];
+        $package_markup_values = [];
+
+        if (isset($postData['markup_values']) && !empty($postData['markup_values'])) {
+            $markup_values = json_decode($postData['markup_values'], true) ?? [];
+            error_log("Markup values received: " . json_encode($markup_values));
+        }
+
+        if (isset($postData['land_package_markups']) && !empty($postData['land_package_markups'])) {
+            $land_package_markups = json_decode($postData['land_package_markups'], true) ?? [];
+            error_log("Land package markups: " . json_encode($land_package_markups));
+        }
+
+        if (isset($postData['package_markup_values']) && !empty($postData['package_markup_values'])) {
+            $package_markup_values = json_decode($postData['package_markup_values'], true) ?? [];
+            error_log("Package markup values: " . json_encode($package_markup_values));
+        }
+
+        $cost_html = '';
+        $has_valid_nights = false;
+        foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+            foreach ($hotels as $hotel_name => $categories) {
+                if (!empty($categories['nights'])) {
+                    $filtered_nights = array_filter($categories['nights'], fn($v) => $v != 0);
+                    if (count($filtered_nights) > 0) {
+                        $has_valid_nights = true;
+                        break 2; // exit both loops
+                    }
+                }
+            }
+        }
+
+        if (!$has_valid_nights) 
+        {
+            $sorted_costing = [];
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    $sorted_costing[$rating_key][$hotel_name] = $categories;
+                    foreach ($categories as $cat => $occupancies) {
+                        if ($cat === 'nights' || !is_array($occupancies)) continue;
+                        
+                        // Separate CNB/CWB from display occupancies
+                        $display_occ = [];
+                        $cnb_cwb_occ = [];
+                        foreach ($occupancies as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $type = $occ_arr[0] ?? '';
+                            if (stripos($type, 'CNB') !== false || stripos($type, 'CWB') !== false) {
+                                $cnb_cwb_occ[] = $occ;
+                            } else {
+                                $display_occ[] = $occ;
+                            }
+                        }
+                        
+                        // Sort display occupancies by price (ascending)
+                        usort($display_occ, function($a, $b) {
+                            $priceA = (float) explode('__', $a)[1];
+                            $priceB = (float) explode('__', $b)[1];
+                            return $priceA <=> $priceB;
+                        });
+                        
+                        // Merge back: sorted display occupancies first, then CNB/CWB at the end
+                        $sorted_costing[$rating_key][$hotel_name][$cat] = array_merge($display_occ, $cnb_cwb_occ);
+                    }
+                }
+            }
+
+            $hotel_costing_category_wise = $sorted_costing; 
+            $cost_html .= '<table class="rating-table" border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width:100%; text-align: left;">';
+            $cost_html .= '<tr><th style="background-color: #d6d8d9;">Rating</th>';
+
+            // Calculate colspan for each rating (EXCLUDE CNB/CWB)
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                $colspan = 0;
+                foreach ($hotels as $hotel_name => $categories) {
+                    foreach ($categories as $cat => $occupancies) {
+                        if (is_array($occupancies)) {
+                            // EXCLUDE CNB and CWB from column count
+                            $occupancy_type = '';
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                // Skip CNB and CWB occupancies
+                                if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                    $colspan++;
+                                }
+                            }
+                        }
+                    }
+                }
+                $rating_display = ucwords(str_replace('_', ' ', $rating_key));
+                $cost_html .= '<th colspan="' . $colspan . '" style="background-color: #d6d8d9;text-align: center !important;">' . $rating_display . '</th>';
+            }
+            $cost_html .= '</tr>';
+
+            // Hotel row
+            $cost_html .= '<tr><th style="background-color: #d6d8d9;">Hotel</th>';
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    $occ_count = 0;
+                    foreach ($categories as $cat => $occupancies) {
+                        if ($cat === "nights") continue;
+                        if (is_array($occupancies)) {
+                            // Count only non-CNB/CWB occupancies
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                    $occ_count++;
+                                }
+                            }
+                        }
+                    }
+
+                    $nights = isset($categories['nights']) ? $categories['nights'] : 0;
+
+                    if (is_array($nights)) {
+                        $filtered_nights = array_filter($nights, function ($v) {
+                            return $v != 0; // remove any 0 entries
+                        });
+                        $night_count = count($filtered_nights);
+                    } else {
+                        $night_count = (int)$nights;
+                    }
+                    $hotel_display = strstr($hotel_name, '_', true) . ($nights ? " ({$night_count}N)" : "");
+                    if ($early_checkin === 'on') {
+                        $hotel_display .= " <span style='color:#0c0c0cff;font-weight:500;'>(Guaranteed Early Check-In Included)</span>";
+                    }
+                    $cost_html .= '<td colspan="' . $occ_count . '" style="background-color: #d6d8d9; font-weight:bold;color:#6060a9;">' . $hotel_display . '</td>';
+                }
+            }
+            $cost_html .= '</tr>';
+
+            $cost_html .= '<tr><th style="background-color: #d6d8d9;white-space: nowrap !important;">Room Category</th>';
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    $roomCats = [];
+                    $categoryIds = [];
+
+                    // First, collect all non-CNB/CWB occupancies and their categories
+                    foreach ($categories as $cat => $occupancies) {
+                        if (!is_array($occupancies)) continue;
+                         $hotel_id = $categories['hotel_id'] ?? 0;
+                        foreach ($occupancies as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                            $category_id = isset($occ_arr[2]) ? $occ_arr[2] : $this->get_category_id_by_name_new($cat, $hotel_id);
+
+                            // Only include non-CNB/CWB occupancies
+                            if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                $roomCats[] = [
+                                    'category' => $cat,
+                                    'id' => $category_id,
+                                    'hotel_name' => $hotel_name
+                                ];
+                            }
+                        }
+                    }
+
+                    // Group consecutive same categories for colspan
+                    $groupedCats = [];
+                    $prevCat = null;
+                    $currentGroup = [];
+
+                    foreach ($roomCats as $roomCat) {
+                        if ($prevCat === null) {
+                            // First category
+                            $currentGroup[] = $roomCat;
+                        } elseif ($roomCat['category'] === $prevCat['category']) {
+                            // Same category, add to current group
+                            $currentGroup[] = $roomCat;
+                        } else {
+                            // Different category, save current group and start new one
+                            $groupedCats[] = $currentGroup;
+                            $currentGroup = [$roomCat];
+                        }
+                        $prevCat = $roomCat;
+                    }
+
+                    // Don't forget the last group
+                    if (!empty($currentGroup)) {
+                        $groupedCats[] = $currentGroup;
+                    }
+
+                    // Now display the grouped categories
+                    foreach ($groupedCats as $group) {
+                        $colspan = count($group);
+                        $firstCat = $group[0];
+
+                        $cost_html .= '<td colspan="' . $colspan . '" style="background-color: #d6d8d9;white-space: nowrap !important;">';
+
+                        // Check if category has description and image
+                        $category_id = $firstCat['id'];
+                        $has_details = false;
+
+                        if ($category_id > 0) {
+                            // Check if category has description and image
+                            $this->db->select('category_description, category_image');
+                            $this->db->from('hotel_room_categories');
+                            $this->db->where('id', $category_id);
+                            $this->db->where("category_description IS NOT NULL AND category_description != ''");
+                            $this->db->where("category_image IS NOT NULL AND category_image != ''");
+                            $category_check = $this->db->get();
+
+                            $has_details = ($category_check->num_rows() > 0);
+                        }
+
+                        // Only show hyperlink if category has both description and image
+                        if ($has_details) {
+                            $cost_html .= '<a href="' . base_url('room-category-page/' . base64_encode($firstCat['id'])) . '" target="_blank" style="color: #131313ff;text-decoration: underline !important;text-decoration-color: blue;vertical-align: top;"  title="Click to view category details">';
+                            $cost_html .= $firstCat['category'];
+                            $cost_html .= '<span><img src="' . base_url('assets/images/camera_icon.png') . '" alt="Room Category Icon" style="width: 30px;margin-left: 5px;vertical-align: middle;" ></span></a>';
+                        } else {
+                            // Without hyperlink
+                            $cost_html .= $firstCat['category'];
+                        }
+
+                        $cost_html .= '</td>';
+                    }
+                }
+            }
+            $cost_html .= '</tr>';
+
+            // Room Occupancy row - REMOVE CNB and CWB
+            $cost_html .= '<tr><th style="background-color: #d6d8d9;">Room Occupancy</th>';
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    foreach ($categories as $cat => $occupancies) {
+                        if (!is_array($occupancies)) continue;
+                        foreach ($occupancies as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                            $occupancy_type = str_ireplace("Occupancy", "", $occupancy_type);
+                            $occupancy_type = trim($occupancy_type);
+
+                            // Skip CNB and CWB occupancies
+                            if (strpos($occupancy_type, 'CNB') !== false || strpos($occupancy_type, 'CWB') !== false) {
+                                continue;
+                            }
+
+                            if ($occupancy_type == 'Double') {
+                                $occupancy_type = 'Double/Twin';
+                                $cost_html .= '<td style="background-color: #d6d8d9;"><b>' . $occupancy_type . '</b></td>';
+                            } else {
+                                $cost_html .= '<td style="background-color: #d6d8d9;"><b>' . $occupancy_type . '</b></td>';
+                            }
+                        }
+                    }
+                }
+            }
+            $cost_html .= '</tr>';
+
+            // Hotel Markup Per Person row
+            $label = ($hotel_markup_percentage) ? "Hotel Margin Per Person" : "Margin Per Person";
+            $cost_html .= '<tr><th style="background-color: #d6d8d9;">' . $label . '</th>';
+
+            $col_index = 0;
+            $markup_values_by_index = [];      // stores markup dollar amount per column
+            $effective_percentage_by_index = []; // stores effective percentage per column
+
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    foreach ($categories as $cat => $occupancies) {
+                        if (!is_array($occupancies)) continue;
+                        foreach ($occupancies as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $occupancy_type = $occ_arr[0] ?? '';
+
+                            // Skip CNB/CWB
+                            if (strpos($occupancy_type, 'CNB') !== false || strpos($occupancy_type, 'CWB') !== false) {
+                                continue;
+                            }
+
+                            $occupancy_cost = isset($occ_arr[1]) ? floatval($occ_arr[1]) : 0;
+
+                            // Calculate markup value
+                            $markup_value = 0;
+                            if (isset($markup_values["markup_{$col_index}"]) && is_array($markup_values["markup_{$col_index}"])) {
+                                $markup_value = $markup_values["markup_{$col_index}"]["value"] ?? 0;
+                            } elseif (isset($markup_values["markup_{$col_index}"])) {
+                                $markup_value = $markup_values["markup_{$col_index}"];
+                            } else {
+                                if (!empty($hotel_markup_percentage)) {
+                                    $markup_amount = $occupancy_cost * ($hotel_markup_percentage / 100);
+                                } else {
+                                    $markup_amount = $occupancy_cost * ($markup_percentage / 100);
+                                }
+                                if (!$has_valid_nights && empty($hotel_markup_percentage)) {
+                                    $markup_amount += $land_package_markup_pp;
+                                }
+                                $markup_value = ($currency > 0) ? round($markup_amount / $currency) : round($markup_amount);
+                            }
+
+                            // Store for later use
+                            $markup_values_by_index[$col_index] = $markup_value;
+
+                            // Determine effective percentage for this cell
+                            $effective_percentage = $hotel_markup_percentage ?: $markup_percentage;
+                            $effective_percentage_by_index[$col_index] = $effective_percentage;
+
+                            // Display the markup cell
+                            $base_cost = $occupancy_cost;
+                            if (!$has_valid_nights && empty($hotel_markup_percentage)) {
+                                $base_cost += $land_package_markup_pp;
+                            }
+
+                            $cost_html .= '<td style="background-color: #d6d8d9; font-weight: bold; color: #333;" data-col-index="' . $col_index . '">';
+                            $cost_html .= '$' . $markup_value . ' <small>(<span class="updated-markup" data-base="' . $base_cost . '" data-markup-id="adult_' . $col_index . '">' . $effective_percentage . '%</span>)</small>';
+                            $cost_html .= '</td>';
+
+                            $col_index++;
+                        }
+                    }
+                }
+            }
+            $cost_html .= '</tr>';
+            // Reduced Margin Per Person row
+            $cost_html .= '<tr><th style="background-color: #d6d8d9; color: blue;">Reduced Margin Per Person</th>';
+            $col_index = 0;
+
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    foreach ($categories as $cat => $occupancies) {
+                        if (!is_array($occupancies)) continue;
+                        foreach ($occupancies as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $occupancy_type = $occ_arr[0] ?? '';
+
+                            if (strpos($occupancy_type, 'CNB') !== false || strpos($occupancy_type, 'CWB') !== false) {
+                                continue;
+                            }
+
+                            // Clean data attributes
+                            $base_hotel_name = strstr($hotel_name, '_', true) ?: $hotel_name;
+                            $clean_hotel = htmlspecialchars($base_hotel_name, ENT_QUOTES);
+                            $clean_category = htmlspecialchars($cat, ENT_QUOTES);
+                            $clean_occupancy = trim(str_ireplace("Occupancy", "", $occupancy_type));
+                            $clean_rating = ucwords(str_replace('_', ' ', $rating_key));
+
+                            $data_attrs = 'data-hotel="' . $clean_hotel . '" ';
+                            $data_attrs .= 'data-room-category="' . $clean_category . '" ';
+                            $data_attrs .= 'data-occupancy="' . $clean_occupancy . '" ';
+                            $data_attrs .= 'data-rating="' . $clean_rating . '" ';
+                            $data_attrs .= 'data-col-index="' . $col_index . '" ';
+                            $data_attrs .= 'data-type="adult" ';
+
+                            // Retrieve stored reduced margin if any
+                            $reduced_margin_value = 0;
+                            foreach ($reduced_margins_array as $margin) {
+                                if ($margin['type'] == 'adult' &&
+                                    trim($margin['hotel']) == trim($base_hotel_name) &&
+                                    trim($margin['room_category']) == trim($cat) &&
+                                    trim($margin['occupancy']) == trim($clean_occupancy)) {
+                                    $reduced_margin_value = floatval($margin['value']);
+                                    break;
+                                }
+                            }
+
+                            // Use the precomputed markup value and effective percentage
+                            $original_margin = $markup_values_by_index[$col_index] ?? 0;
+                            $original_markup = $effective_percentage_by_index[$col_index] ?? $markup_percentage;
+
+                            $cost_html .= '<td style="background-color: #d6d8d9;">';
+                            $cost_html .= '<input type="number" class="reduced-margin-input markup-input" ' . $data_attrs . ' data-original-margin="' . $original_margin . '" data-original-markup="' . $original_markup . '" value="' . $reduced_margin_value . '" style="width:100px;" min="0">';
+                            $cost_html .= '</td>';
+
+                            $col_index++;
+                        }
+                    }
+                }
+            }
+            $cost_html .= '</tr>';
+
+            // Check if we have any CNB/CWB occupancies across all hotels (regardless of cost)
+            $has_cnb_occupancies = false;
+            $has_cwb_occupancies = false;
+
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    foreach ($categories as $cat => $occupancies) {
+                        if (!is_array($occupancies)) continue;
+                        foreach ($occupancies as $occ) {
+                            $occ_arr = explode('__', $occ);
+                            $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+
+                            if (strpos($occupancy_type, 'CNB') !== false) {
+                                $has_cnb_occupancies = true;
+                            }
+                            if (strpos($occupancy_type, 'CWB') !== false) {
+                                $has_cwb_occupancies = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // CNB Markup Per Child row
+            if ($total_child_persons > 0 && $has_cnb_occupancies) {
+                $cnb_markup_values = [];          // dollar amount per hotel
+                $cnb_effective_percentage = [];    // effective percentage per hotel
+
+                // First show CNB margin as text
+                $cost_html .= '<tr><th style="background-color: #d6d8d9; color: black;">Margin CNB Per Child</th>';
+                foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                    foreach ($hotels as $hotel_name => $categories) {
+                        $base_hotel_name = strstr($hotel_name, '_', true) ?: $hotel_name;
+                        $occupancy_count = 0;
+
+                        // Count adult occupancies for colspan
+                        foreach ($categories as $cat => $occupancies) {
+                            if (!is_array($occupancies)) continue;
+                            foreach ($occupancies as $occ) {
+                                
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = $occ_arr[0] ?? '';
+                                if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                    $occupancy_count++;
+                                }
+                            }
+                        }
+
+                        // Find CNB markups
+                        foreach ($categories as $cat => $occupancies) {
+                            if (!is_array($occupancies)) continue;
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = $occ_arr[0] ?? '';
+                                if (strpos($occupancy_type, 'CNB') !== false) {
+                                    $occupancy_cost = isset($occ_arr[1]) ? floatval($occ_arr[1]) : 0;
+
+                                    // Calculate markup amount
+                                    $markup_amount = 0;
+                                    if (!empty($hotel_markup_percentage)) {
+                                        $markup_amount = $occupancy_cost * ($hotel_markup_percentage / 100);
+                                    } else {
+                                        $markup_amount = $occupancy_cost * ($markup_percentage / 100);
+                                    }
+
+                                    if (!$has_valid_nights && empty($hotel_markup_percentage)) {
+                                        $markup_amount += $land_package_markup_child_pp;
+                                    }
+
+                                    $converted_markup = ($currency > 0) ? round($markup_amount / $currency) : round($markup_amount);
+
+                                    // Determine effective percentage for this CNB
+                                    $cnb_effective = !empty($hotel_markup_percentage) ? $hotel_markup_percentage : $markup_percentage;
+
+                                    // Store for later use
+                                    $cnb_markup_values[$base_hotel_name] = $converted_markup;
+                                    $cnb_effective_percentage[$base_hotel_name] = $cnb_effective;
+
+                                    $clean_hotel_for_id = preg_replace('/[^a-z0-9]/i', '_', $base_hotel_name);
+                                    $markup_id = 'cnb_' . $clean_hotel_for_id;
+
+                                    $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black; font-weight: bold;">';
+                                    $cost_html .= '$' . $converted_markup . ' <small>(<span class="updated-markup" data-markup-id="' . $markup_id . '">' . $cnb_effective . '%</span>)</small>';
+                                    $cost_html .= '</td>';
+                                    break; // only first CNB per hotel
+                                }
+                            }
+                        }
+                    }
+                }
+                $cost_html .= '</tr>';
+
+                // Then add reduced margin for CNB
+                $cost_html .= '<tr><th style="background-color: #d6d8d9; color: blue;">Reduced Margin CNB Per Child</th>';
+                $cnb_col_index = 0;
+                foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                    foreach ($hotels as $hotel_name => $categories) {
+                        $occupancy_count = 0;
+                        foreach ($categories as $cat => $occupancies) {
+                            if (!is_array($occupancies)) continue;
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = $occ_arr[0] ?? '';
+                                if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                    $occupancy_count++;
+                                }
+                            }
+                        }
+
+                        $base_hotel_name = strstr($hotel_name, '_', true) ?: $hotel_name;
+                        $clean_category = htmlspecialchars($cat, ENT_QUOTES);
+
+                        // Retrieve stored CNB markup and effective percentage
+                        $original_margin = $cnb_markup_values[$base_hotel_name] ?? 0;
+                        $original_markup = $cnb_effective_percentage[$base_hotel_name] ?? $markup_percentage;
+
+                        // Find reduced margin value from saved data
+                        $reduced_margin_cnb_value = 0;
+                        foreach ($reduced_margins_array as $margin) {
+                            if ($margin['type'] == 'cnb' && strcasecmp(trim($margin['hotel']), trim($base_hotel_name)) == 0) {
+                                $reduced_margin_cnb_value = floatval($margin['value']);
+                                break;
+                            }
+                        }
+
+                        $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black;">';
+                        $data_attrs_cnb = 'data-hotel="' . $base_hotel_name . '" ';
+                        $data_attrs_cnb .= 'data-room-category="' . $clean_category . '" ';
+                        $data_attrs_cnb .= 'data-occupancy="CNB" ';
+                        $data_attrs_cnb .= 'data-rating="' . ucwords(str_replace('_', ' ', $rating_key)) . '" ';
+                        $data_attrs_cnb .= 'data-col-index="cnb_' . $cnb_col_index . '" ';
+                        $data_attrs_cnb .= 'data-type="cnb" ';
+                        $data_attrs_cnb .= 'data-original-markup="' . $original_markup . '" ';
+                        $cost_html .= '<input type="number" class="reduced-margin-input cnb-markup-input" ' . $data_attrs_cnb . ' data-original-margin="' . $original_margin . '" value="' . $reduced_margin_cnb_value . '" style="width:100px;" min="0">';
+                        $cost_html .= '</td>';
+
+                        $cnb_col_index++;
+                    }
+                }
+                $cost_html .= '</tr>';
+            }
+
+            // CWB Markup Per Child row
+            if ($total_child_persons > 0 && $has_cwb_occupancies) {
+                $cwb_markup_values = [];
+                $cwb_effective_percentage = [];
+
+                // First show CWB margin as text
+                $cost_html .= '<tr><th style="background-color: #d6d8d9; color: black;">Margin CWB Per Child</th>';
+                $cwb_col_index = 0;
+                foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                    foreach ($hotels as $hotel_name => $categories) {
+                        $base_hotel_name = strstr($hotel_name, '_', true) ?: $hotel_name;
+                        $occupancy_count = 0;
+
+                        // Count adult occupancies for colspan
+                        foreach ($categories as $cat => $occupancies) {
+                            if (!is_array($occupancies)) continue;
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = $occ_arr[0] ?? '';
+                                if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                    $occupancy_count++;
+                                }
+                            }
+                        }
+
+                        // Find CWB markups
+                        foreach ($categories as $cat => $occupancies) {
+                            if (!is_array($occupancies)) continue;
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = $occ_arr[0] ?? '';
+                                if (strpos($occupancy_type, 'CWB') !== false) {
+                                    $occupancy_cost = isset($occ_arr[1]) ? floatval($occ_arr[1]) : 0;
+
+                                    // Calculate markup amount
+                                    $markup_amount = 0;
+                                    if (!empty($hotel_markup_percentage)) {
+                                        $markup_amount = $occupancy_cost * ($hotel_markup_percentage / 100);
+                                    } else {
+                                        $markup_amount = $occupancy_cost * ($markup_percentage / 100);
+                                    }
+
+                                    if (!$has_valid_nights && empty($hotel_markup_percentage)) {
+                                        $markup_amount += $land_package_markup_child_pp;
+                                    }
+
+                                    $converted_markup = ($currency > 0) ? round($markup_amount / $currency) : round($markup_amount);
+
+                                    // Check for stored CWB markup value from post
+                                    $stored_markup = $converted_markup;
+                                    if (isset($markup_values["cwb_markup_{$cwb_col_index}"]) && is_array($markup_values["cwb_markup_{$cwb_col_index}"])) {
+                                        $stored_markup = $markup_values["cwb_markup_{$cwb_col_index}"]["value"] ?? $converted_markup;
+                                    } elseif (isset($markup_values["cwb_markup_{$cwb_col_index}"])) {
+                                        $stored_markup = $markup_values["cwb_markup_{$cwb_col_index}"];
+                                    }
+
+                                    // Determine effective percentage for this CWB
+                                    $cwb_effective = !empty($hotel_markup_percentage) ? $hotel_markup_percentage : $markup_percentage;
+
+                                    // Store for later use
+                                    $cwb_markup_values[$base_hotel_name] = $stored_markup;
+                                    $cwb_effective_percentage[$base_hotel_name] = $cwb_effective;
+
+                                    $clean_hotel_for_id = preg_replace('/[^a-z0-9]/i', '_', $base_hotel_name);
+                                    $markup_id = 'cwb_' . $clean_hotel_for_id;
+
+                                    $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black; font-weight: bold;">';
+                                    $cost_html .= '$' . $stored_markup . ' <small>(<span class="updated-markup" data-markup-id="' . $markup_id . '">' . $cwb_effective . '%</span>)</small>';
+                                    $cost_html .= '</td>';
+                                    break; // only first CWB per hotel
+                                }
+                            }
+                        }
+                        $cwb_col_index++;
+                    }
+                }
+                $cost_html .= '</tr>';
+
+                // Then add reduced margin for CWB
+                $cost_html .= '<tr><th style="background-color: #d6d8d9; color: blue;">Reduced Margin CWB Per Child</th>';
+                $cwb_col_index = 0;
+                foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                    foreach ($hotels as $hotel_name => $categories) {
+                        $occupancy_count = 0;
+                        foreach ($categories as $cat => $occupancies) {
+                            if (!is_array($occupancies)) continue;
+                            foreach ($occupancies as $occ) {
+                                $occ_arr = explode('__', $occ);
+                                $occupancy_type = $occ_arr[0] ?? '';
+                                if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                    $occupancy_count++;
+                                }
+                            }
+                        }
+
+                        $base_hotel_name = strstr($hotel_name, '_', true) ?: $hotel_name;
+                        $clean_category = htmlspecialchars($cat, ENT_QUOTES);
+
+                        // Retrieve stored CWB markup and effective percentage
+                        $original_margin = $cwb_markup_values[$base_hotel_name] ?? 0;
+                        $original_markup = $cwb_effective_percentage[$base_hotel_name] ?? $markup_percentage;
+
+                        // Find reduced margin value from saved data
+                        $reduced_margin_cwb_value = 0;
+                        foreach ($reduced_margins_array as $margin) {
+                            if ($margin['type'] == 'cwb' && strcasecmp(trim($margin['hotel']), trim($base_hotel_name)) == 0) {
+                                $reduced_margin_cwb_value = floatval($margin['value']);
+                                break;
+                            }
+                        }
+
+                        $cost_html .= '<td colspan="' . $occupancy_count . '" style="background-color: #d6d8d9; color: black;">';
+                        $data_attrs_cwb = 'data-hotel="' . $base_hotel_name . '" ';
+                        $data_attrs_cwb .= 'data-room-category="' . $clean_category . '" ';
+                        $data_attrs_cwb .= 'data-occupancy="CWB" ';
+                        $data_attrs_cwb .= 'data-rating="' . ucwords(str_replace('_', ' ', $rating_key)) . '" ';
+                        $data_attrs_cwb .= 'data-col-index="cwb_' . $cwb_col_index . '" ';
+                        $data_attrs_cwb .= 'data-type="cwb" ';
+                        $data_attrs_cwb .= 'data-original-markup="' . $original_markup . '" ';
+                        $cost_html .= '<input type="number" class="reduced-margin-input cwb-markup-input" ' . $data_attrs_cwb . ' data-original-margin="' . $original_margin . '" value="' . $reduced_margin_cwb_value . '" style="width:100px;" min="0">';
+                        $cost_html .= '</td>';
+
+                        $cwb_col_index++;
+                    }
+                }
+                $cost_html .= '</tr>';
+            }
+
+            // Land Package Markup Per Person
+            if (!empty($hotel_markup_percentage)) {
+                $total_cols = 0;
+                foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                    foreach ($hotels as $hotel_name => $categories) {
+                        foreach ($categories as $cat => $occupancies) {
+                            if (is_array($occupancies)) {
+                                foreach ($occupancies as $occ) {
+                                    $occ_arr = explode('__', $occ);
+                                    $occupancy_type = isset($occ_arr[0]) ? $occ_arr[0] : '';
+                                    if (strpos($occupancy_type, 'CNB') === false && strpos($occupancy_type, 'CWB') === false) {
+                                        $total_cols++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                $converted_land_markup = ($currency > 0)
+                    ? round($land_package_markup_pp / $currency)
+                    : round($land_package_markup_pp);
+
+                // Check for stored land package markup value
+                $stored_adult_land_markup = $converted_land_markup;
+                if (isset($land_package_markups['adult'])) {
+                    $stored_adult_land_markup = $land_package_markups['adult'];
+                }
+
+                $reduced_land_adult_value = 0;
+                foreach ($reduced_land_margins_array as $margin) {
+                    if ($margin['type'] == 'land_adult') {
+                        $reduced_land_adult_value = floatval($margin['value']);
+                        break;
+                    }
+                }
+
+                // Show Land Package Margin as text
+                $cost_html .= '<tr>
+                    <th style="background-color:#d6d8d9;color:red;">Land Package Margin Per Person</th>
+                    <td colspan="' . $total_cols . '" style="background-color:#d6d8d9;color:red; font-weight: bold;">$' . $stored_adult_land_markup . ' <small>(<span class="updated-markup" data-markup-id="land_adult">' . $markup_percentage . '%</span>)</small></td>
+                </tr>';
+
+                $cost_html .= '<tr>
+                    <th style="background-color:#d6d8d9;color:blue;">Reduced Land Package Margin Per Person</th>
+                    <td colspan="' . $total_cols . '" style="background-color:#d6d8d9;color:red;">';
+                $data_attrs_land = 'data-hotel="land_package" ';
+                $data_attrs_land .= 'data-room-category="land_package" ';
+                $data_attrs_land .= 'data-occupancy="land_package" ';
+                $data_attrs_land .= 'data-rating="land_package" ';
+                $data_attrs_land .= 'data-col-index="land_adult" ';
+                $cost_html .= '<input type="number" class="reduced-margin-input land-markup-input" ' . $data_attrs_land . ' data-type="land_adult" data-original-margin="' . $stored_adult_land_markup . '" data-original-markup="' . $markup_percentage . '" value="' . $reduced_land_adult_value . '" style="width:100px;" min="0">
+                    </td>
+                </tr>';
+
+                if ($total_child_persons > 0) {
+                    $converted_land_markup_child = ($currency > 0)
+                        ? round($land_package_markup_child_pp / $currency)
+                        : round($land_package_markup_child_pp);
+
+                    // Check for stored child land package markup value
+                    $stored_child_land_markup = $converted_land_markup_child;
+                    if (isset($land_package_markups['child'])) {
+                        $stored_child_land_markup = $land_package_markups['child'];
+                    }
+
+                    $reduced_land_child_value = 0;
+                    foreach ($reduced_land_margins_array as $margin) {
+                        if ($margin['type'] == 'land_child') {
+                            $reduced_land_child_value = floatval($margin['value']);
+                            break;
+                        }
+                    }
+
+                    // Show Child Land Package Margin as text
+                    $cost_html .= '<tr>
+                        <th style="background-color:#d6d8d9;color:red;">Land Package Margin Per Child</th>
+                        <td colspan="' . $total_cols . '" style="background-color:#d6d8d9;color:red; font-weight: bold;">$' . $stored_child_land_markup . '<small>(<span class="updated-markup" data-markup-id="land_child">' . $markup_percentage . '%</span>)</small></td>
+                    </tr>';
+
+                    $cost_html .= '<tr>
+                        <th style="background-color:#d6d8d9;color:blue;">Reduced Land Package Margin Per Child</th>
+                        <td colspan="' . $total_cols . '" style="background-color:#d6d8d9;color:red;">';
+                    $data_attrs_land_child = 'data-hotel="land_package" ';
+                    $data_attrs_land_child .= 'data-room-category="land_package" ';
+                    $data_attrs_land_child .= 'data-occupancy="land_package" ';
+                    $data_attrs_land_child .= 'data-rating="land_package" ';
+                    $data_attrs_land_child .= 'data-col-index="land_child" ';
+                    $cost_html .= '<input type="number" class="reduced-margin-input land-markup-input" ' . $data_attrs_land_child . ' data-type="land_child" data-original-margin="' . $stored_child_land_markup . '" data-original-markup="' . $markup_percentage . '" value="' . $reduced_land_child_value . '" style="width:100px;" min="0">
+                        </td>
+                    </tr>';
+                }
+            }
+            $cost_html .= '</table>';
+
+            // JavaScript (unchanged, already correct)
+            $cost_html .= '<script>
+            function updateMarkup(inputEl) {
+                var $input = $(inputEl);
+                console.log("Input changed:", $input);
+                var reduced = parseFloat($input.val()) || 0;
+                var originalMargin = parseFloat($input.data("original-margin"));
+                var originalMarkup = parseFloat($input.data("original-markup"));
+                var type = $input.data("type");
+                var colIndex = $input.data("col-index");
+
+                console.log({ reduced, originalMargin, originalMarkup, type, colIndex });
+
+                if (!originalMargin || !originalMarkup) {
+                    console.warn("Missing original data");
+                    return;
+                }
+
+                var baseCost = (originalMargin * 100) / originalMarkup;
+                var newMargin = Math.max(originalMargin - reduced, 0);
+                var updatedMarkup = (newMargin / baseCost) * 100;
+
+                console.log("Calculated updated markup:", updatedMarkup);
+
+                var $markupCell = null;
+
+                if (type === "adult" && colIndex !== undefined) {
+                    $markupCell = $(".updated-markup[data-markup-id=\'adult_" + colIndex + "\']");
+                } 
+                else if (type === "cnb") {
+                    var hotel = $input.data("hotel");
+                    var hotelId = hotel.replace(/[^a-z0-9]/gi, "_");
+                    $markupCell = $(".updated-markup[data-markup-id=\'cnb_" + hotelId + "\']");
+                }
+                else if (type === "cwb") {
+                    var hotel = $input.data("hotel");
+                    var hotelId = hotel.replace(/[^a-z0-9]/gi, "_");
+                    $markupCell = $(".updated-markup[data-markup-id=\'cwb_" + hotelId + "\']");
+                }
+                else if (type === "land_adult") {
+                    $markupCell = $(".updated-markup[data-markup-id=\'land_adult\']");
+                }
+                else if (type === "land_child") {
+                    $markupCell = $(".updated-markup[data-markup-id=\'land_child\']");
+                }
+                console.log("Found markup cell:", $markupCell);
+                if ($markupCell && $markupCell.length) {
+                    $markupCell.text(updatedMarkup.toFixed(1) + "%");
+                } else {
+                    console.warn("Markup cell not found for", type, colIndex);
+                }
+            }
+
+            $(document).on("input", ".reduced-margin-input", function () {
+                updateMarkup(this);
+            });
+
+            $(document).ready(function () {
+                $(".reduced-margin-input").each(function () {
+                    updateMarkup(this);
+                });
+            });
+            </script>';
+        }
+        
+        if ($has_valid_nights) {
+            $normalized_hotel_costing = [];
+            
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                $normalized_hotel_costing[$rating_key] = [];
+                
+                foreach ($hotels as $hotel_identifier => $categories) {
+                    $hotel_parts = explode('_', $hotel_identifier);
+                    $hotel_name = '';
+                    $hotel_nights = [];
+                    
+                    // PRIORITY 1: Use existing 'nights' array if present
+                    if (isset($categories['nights']) && is_array($categories['nights'])) {
+                        $hotel_nights = $categories['nights'];
+                        // Extract hotel name from identifier (everything before first numeric)
+                        for ($i = 0; $i < count($hotel_parts); $i++) {
+                            if (is_numeric($hotel_parts[$i])) {
+                                $hotel_name = implode('_', array_slice($hotel_parts, 0, $i));
+                                break;
+                            }
+                        }
+                    } 
+                    // PRIORITY 2: Parse nights from identifier (original logic)
+                    else {
+                        for ($i = 0; $i < count($hotel_parts); $i++) {
+                            if (is_numeric($hotel_parts[$i])) {
+                                $hotel_name = implode('_', array_slice($hotel_parts, 0, $i));
+                                $hotel_nights = array_slice($hotel_parts, $i);
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // PRIORITY 3: If still no nights, extract from room category names
+                    if (empty($hotel_nights)) {
+                        if (empty($hotel_name)) {
+                            $hotel_name = $hotel_identifier;
+                        }
+                        $hotel_nights = [];
+                        foreach ($categories as $cat => $occupancies) {
+                            if (strpos($cat, '_nights_') !== false) {
+                                $parts = explode('_nights_', $cat);
+                                if (isset($parts[1])) {
+                                    $night_parts = explode('_', $parts[1]);
+                                    $hotel_nights = array_merge($hotel_nights, $night_parts);
+                                }
+                            }
+                        }
+                        $hotel_nights = array_unique($hotel_nights);
+                        sort($hotel_nights);
+                    }
+                    
+                    // Fallback: default nights 1..N
+                    if (empty($hotel_nights)) {
+                        $hotel_nights = range(1, $nights);
+                    }
+                    
+                    // Ensure hotel name is never empty
+                    if (empty($hotel_name)) {
+                        $hotel_name = $hotel_identifier;
+                    }
+                    
+                    // Create new identifier
+                    $new_hotel_identifier = $hotel_name . '_' . implode('_', $hotel_nights);
+                    
+                    // Get hotel details from original categories or database
+                    $hotel_id = isset($categories['hotel_id']) ? $categories['hotel_id'] : '';
+                    $hotel_city = isset($categories['hotel_city']) ? $categories['hotel_city'] : '';
+                    
+                    if (empty($hotel_id) || empty($hotel_city)) {
+                        $hotel_details = $this->get_hotel_details_by_name($hotel_name);
+                        if ($hotel_details) {
+                            $hotel_id = $hotel_details['id'];
+                            $hotel_city = $hotel_details['city'];
+                        }
+                    }
+                    
+                    // Initialize normalized entry WITH ALL REQUIRED KEYS
+                    $normalized_hotel_costing[$rating_key][$new_hotel_identifier] = [
+                        'hotel_name' => $hotel_name,
+                        'hotel_id'   => $hotel_id,
+                        'hotel_city' => $hotel_city,
+                        'nights'     => $hotel_nights
+                    ];
+                    
+                    // Add room categories
+                    foreach ($categories as $cat => $occupancies) {
+                        if (in_array($cat, ['hotel_name', 'hotel_id', 'hotel_city', 'nights'])) {
+                            continue;
+                        }
+                        
+                        if (strpos($cat, '_nights_') !== false) {
+                            $new_cat_name = $cat;
+                        } else {
+                            $new_cat_name = $cat . '_nights_' . implode('_', $hotel_nights);
+                        }
+                        
+                        $normalized_hotel_costing[$rating_key][$new_hotel_identifier][$new_cat_name] = $occupancies;
+                    }
+                }
+            }
+            
+            $hotel_costing_category_wise = $normalized_hotel_costing;
+
+            $hotels_by_ratings = [];
+            
+            foreach ($hotel_costing_category_wise as $rating_key => $hotels) {
+                foreach ($hotels as $hotel_name => $categories) {
+                    $nights_array = $categories['nights'] ?? [];
+                    $filtered_nights = is_array($nights_array) ? $nights_array : [];
+            
+                    if (empty($filtered_nights)) continue;
+            
+                    $package_nights = array_filter($filtered_nights, function($n) {
+                        return $n > 0; // Only positive numbers are actual nights
+                    });
+                    
+                    if (empty($package_nights)) continue;
+            
+                    foreach ($package_nights as $night_no) {
+                        $hotels_by_ratings[$rating_key][$night_no][] = [
+                            'name' => $hotel_name,
+                            'rating' => $rating_key,
+                            'night_no' => $night_no,
+                            'categories' => $categories,
+                            'has_early_checkin' => in_array(0, $filtered_nights),
+                            'has_late_checkout' => in_array(-1, $filtered_nights)
+                        ];
+                    }
+                }
+            }
+            
+            $all_ratings = array_keys($hotels_by_ratings);
+            $all_nights = [];
+            
+            foreach ($hotels_by_ratings as $rating => $night_hotels) {
+                $all_nights = array_unique(array_merge($all_nights, array_keys($night_hotels)));
+            }
+            
+            sort($all_nights);
+            
+            foreach ($all_ratings as $rating) {
+                foreach ($all_nights as $night_no) {
+                    if (
+                        !isset($hotels_by_ratings[$rating][$night_no]) ||
+                        empty($hotels_by_ratings[$rating][$night_no])
+                    ) {
+                        foreach ($all_ratings as $alt_rating) {
+                            if ($alt_rating === $rating) continue;
+                            if (!empty($hotels_by_ratings[$alt_rating][$night_no])) {
+                                $hotels_by_ratings[$rating][$night_no] = $hotels_by_ratings[$alt_rating][$night_no];
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            $packages = [];
+            $package_index = 1;
+            
+            foreach ($hotels_by_ratings as $rating => $night_groups) {
+                $max_count = 0;
+                foreach ($night_groups as $night_hotels) {
+                    $max_count = max($max_count, count($night_hotels));
+                }
+            
+                for ($i = 0; $i < $max_count; $i++) {
+                    $combo = [];
+            
+                    foreach ($all_nights as $night_no) {
+                        $night_hotels = $night_groups[$night_no];
+                        $hotel = $night_hotels[$i] ?? end($night_hotels);
+            
+                        if (!$hotel) {
+                            foreach ($all_ratings as $alt_rating) {
+                                if ($alt_rating == $rating) continue;
+                                if (!empty($hotels_by_ratings[$alt_rating][$night_no])) {
+                                    $hotel = $hotels_by_ratings[$alt_rating][$night_no][$i] ?? end($hotels_by_ratings[$alt_rating][$night_no]);
+                                    if ($hotel) break;
+                                }
+                            }
+                        }
+            
+                        if ($hotel) {
+                            $combo[] = $hotel;
+                        }
+                    }
+                  if (!empty($combo)) {
+                        $merged_costs = [];
+                        $hotel_wise_costs = []; 
+                        $hotel_room_occupancies = [];
+                        
+                        // Group hotels first to process each hotel only ONCE
+                        $hotels_in_package = [];
+                        foreach ($combo as $hotel) {
+                            $hotel_name = $hotel['name'];
+                            if (!isset($hotels_in_package[$hotel_name])) {
+                                $hotels_in_package[$hotel_name] = [
+                                    'data' => $hotel,
+                                    'night_count' => 0
+                                ];
+                            }
+                            $hotels_in_package[$hotel_name]['night_count']++;
+                        }
+                        
+                        // тЬЕ рдирдпрд╛ рдХреЛрдб: рдкрд╣рд▓реЗ рд╣реА рдкреИрдХреЗрдЬ рдХреА рдкрд╣рд▓реА рдФрд░ рдЖрдЦрд┐рд░реА рд░рд╛рдд рдХреЗ рд╣реЛрдЯрд▓ рдирд╛рдо рдирд┐рдХрд╛рд▓реЗрдВ
+                        $first_night_hotel = null;
+                        $last_night_hotel = null;
+                        $min_night = PHP_INT_MAX;
+                        $max_night = -1;
+                        
+                        foreach ($combo as $hotel) {
+                            $night = $hotel['night_no'];
+                            if ($night > 0) { 
+                                if ($night < $min_night) {
+                                    $min_night = $night;
+                                    $first_night_hotel = $hotel['name'];
+                                }
+                                if ($night > $max_night) {
+                                    $max_night = $night;
+                                    $last_night_hotel = $hotel['name'];
+                                }
+                            }
+                        }
+                        
+                        // Now calculate costs for each unique hotel
+                        foreach ($hotels_in_package as $hotel_name => $hotel_info) {
+                            $hotel = $hotel_info['data'];
+                            $night_count = $hotel_info['night_count'];
+                            $categories = $hotel['categories'];
+                            $has_early_checkin = $hotel['has_early_checkin'] ?? false;
+                            $has_late_checkout = $hotel['has_late_checkout'] ?? false;
+                            
+                            // Initialize arrays for this hotel if not exists
+                            if (!isset($hotel_wise_costs[$hotel_name])) {
+                                $hotel_wise_costs[$hotel_name] = [];
+                            }
+                            
+                            // Get the hotel's nights array
+                            $hotel_nights = $categories['nights'] ?? [];
+                            
+                            // Calculate TOTAL services (nights + early check-in + late checkout)
+                            $total_services = 0;
+                            if (is_array($hotel_nights)) {
+                                $total_services = count(array_filter($hotel_nights, function($n) {
+                                    return $n !== null && $n !== '' && $n !== false;
+                                }));
+                            } elseif ($hotel_nights > 0) {
+                                $total_services = $hotel_nights;
+                            }
+                            
+                            foreach ($categories as $cat => $occupancies) {
+                                if (!is_array($occupancies) || $cat === 'nights') continue;
+
+                                foreach ($occupancies as $occ) {
+                                    $occ_arr = explode('__', $occ);
+                                    $occ_type = trim(str_ireplace("Occupancy", "", $occ_arr[0] ?? ''));
+                                    $occ_total_cost = floatval($occ_arr[1] ?? 0);
+                                    
+                                    // Calculate cost per service (night/early check-in/late checkout)
+                                    $cost_per_service = $total_services > 0 ? $occ_total_cost / $total_services : 0;
+                                    
+                                    // тЬЕ рдмрджрд▓рд╛ рд╣реБрдЖ рд▓реЙрдЬрд┐рдХ: services_in_package рдХреА рдЧрдгрдирд╛
+                                    $services_in_package = 0;
+                                    $services_in_package += $night_count;
+                                    
+                                    // тЬЕ рд╣реЛрдЯрд▓ рдирд╛рдо рд╕реЗ рддреБрд▓рдирд╛ рдХрд░реЗрдВ (рд░рд╛рдд рд╕рдВрдЦреНрдпрд╛ рд╕реЗ рдирд╣реАрдВ)
+                                    if ($hotel_name === $first_night_hotel && $has_early_checkin) {
+                                        $services_in_package += 1;
+                                    }
+                                    if ($hotel_name === $last_night_hotel && $has_late_checkout) {
+                                        $services_in_package += 1;
+                                    }
+                                    
+                                    $total_cost_for_package = $cost_per_service * $services_in_package;
+
+                                    // Store room category information
+                                    if (!isset($hotel_room_occupancies[$hotel_name][$occ_type])) {
+                                        $hotel_room_occupancies[$hotel_name][$occ_type] = [];
+                                    }
+                                    
+                                    if (!in_array($cat, $hotel_room_occupancies[$hotel_name][$occ_type])) {
+                                        $hotel_room_occupancies[$hotel_name][$occ_type][] = $cat;
+                                    }
+
+                                    // Add to hotel-wise costs
+                                    if (!isset($hotel_wise_costs[$hotel_name][$occ_type])) {
+                                        $hotel_wise_costs[$hotel_name][$occ_type] = 0;
+                                    }
+                                    $hotel_wise_costs[$hotel_name][$occ_type] += $total_cost_for_package;
+
+                                    // Add to merged costs (total for all hotels in package)
+                                    if (!isset($merged_costs[$occ_type])) {
+                                        $merged_costs[$occ_type] = 0;
+                                    }
+                                    $merged_costs[$occ_type] += $total_cost_for_package;
+                                }
+                            }
+                        }
+
+                        // тЬЕ рдЕрдм $packages[] рдореЗрдВ рд╡рд╣реА $first_night_hotel рдФрд░ $last_night_hotel рдЬреЛрдбрд╝реЗрдВ
+                       // ============================================================
+                            // CHECK WHETHER THIS PACKAGE IS ALREADY CREATED
+                            // ============================================================
+
+                            // Create a stable signature for the package.
+                            // Package is considered same when its hotel selection,
+                            // rating and night-wise hotel combination are same.
+                            $package_signature_data = [];
+
+                            foreach ($combo as $hotel) {
+
+                                $signature_hotel = [
+                                    'name'     => (string)($hotel['name'] ?? ''),
+                                    'rating'   => (string)($hotel['rating'] ?? ''),
+                                    'night_no' => (int)($hotel['night_no'] ?? 0),
+                                ];
+
+                                // Include room categories also so that packages having
+                                // different room-category configuration are NOT treated
+                                // as duplicate packages.
+                                $hotel_categories = [];
+
+                                if (!empty($hotel['categories']) && is_array($hotel['categories'])) {
+
+                                    foreach ($hotel['categories'] as $cat => $occupancies) {
+
+                                        // nights array itself is already represented by night_no
+                                        if ($cat === 'nights') {
+                                            continue;
+                                        }
+
+                                        if (is_array($occupancies)) {
+                                            $hotel_categories[$cat] = $occupancies;
+                                        } else {
+                                            $hotel_categories[$cat] = (string)$occupancies;
+                                        }
+                                    }
+
+                                    ksort($hotel_categories);
+                                }
+
+                                $signature_hotel['categories'] = $hotel_categories;
+
+                                $package_signature_data[] = $signature_hotel;
+                            }
+
+                            // Sort by night so the same package gets the same signature
+                            // even if the internal array order changes.
+                            usort($package_signature_data, function($a, $b) {
+
+                                if ($a['night_no'] == $b['night_no']) {
+                                    if ($a['name'] == $b['name']) {
+                                        return strcmp($a['rating'], $b['rating']);
+                                    }
+
+                                    return strcmp($a['name'], $b['name']);
+                                }
+
+                                return $a['night_no'] <=> $b['night_no'];
+                            });
+
+                            $package_signature = md5(
+                                json_encode(
+                                    $package_signature_data,
+                                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                                )
+                            );
+
+
+                            // ============================================================
+                            // DUPLICATE PACKAGE CHECK
+                            // ============================================================
+
+                            if (isset($package_signatures[$package_signature])) {
+
+                                // Same package already exists.
+                                // Do NOT create Package 2 / Package 3 again.
+                                continue;
+                            }
+
+
+                            // ============================================================
+                            // NEW / UNIQUE PACKAGE
+                            // ============================================================
+
+                            $package_signatures[$package_signature] = true;
+
+                            $packages[] = [
+                                'name' => 'Package ' . $package_index++,
+                                'rating' => $rating,
+                                'hotels' => $combo,
+                                'merged_costs' => $merged_costs,
+                                'hotel_wise_costs' => $hotel_wise_costs,
+                                'hotel_room_occupancies' => $hotel_room_occupancies,
+                                'first_night_hotel' => $first_night_hotel,
+                                'last_night_hotel'  => $last_night_hotel
+                            ];
+                    }
+                }
+            }
+            
+          
+            
+            $has_cnb_occupancies = false;
+            $has_cwb_occupancies = false;
+            
+            foreach ($packages as $pkg) {
+                foreach ($pkg['merged_costs'] as $type => $cost) {
+                    if (stripos($type, 'CNB') !== false) {
+                        $has_cnb_occupancies = true;
+                    }
+                    if (stripos($type, 'CWB') !== false) {
+                        $has_cwb_occupancies = true;
+                    }
+                }
+            }
+            
+            $all_occupancy_types = ['Single', 'Double', 'Triple', 'Quad', 'Quint', 'Sext'];
+            $available_occupancy_types = [];
+            
+            if($total_child_persons > 0 && $has_cnb_occupancies) {
+                $all_occupancy_types[] = 'CNB';
+            }
+            if($total_child_persons > 0 && $has_cwb_occupancies) {
+                $all_occupancy_types[] = 'CWB';
+            }
+            
+            // foreach ($packages as $pkg) {
+            //     foreach ($all_occupancy_types as $type) {
+            //         if (isset($pkg['merged_costs'][$type]) && $pkg['merged_costs'][$type] >= 0) {
+            //             $available_occupancy_types[$type] = true;
+            //         }
+            //     }
+            // }
+            
+            // --- NEW: Build price map for sorting occupancy types ---
+            $occupancy_price_map = [];
+            foreach ($all_occupancy_types as $type) {
+                $occupancy_price_map[$type] = PHP_FLOAT_MAX; // start high
+            }
+
+            foreach ($packages as $pkg) {
+                foreach ($all_occupancy_types as $type) {
+                    if (isset($pkg['merged_costs'][$type]) && $pkg['merged_costs'][$type] >= 0) {
+                        $base_cost = $pkg['merged_costs'][$type];
+                        // Apply markup (same logic as later in table)
+                        $base_cost += ($base_cost * ($markup_percentage / 100));
+                        // Add land package cost
+                        if (stripos($type, 'CNB') !== false || stripos($type, 'CWB') !== false) {
+                            $add_total = $original_grand_total_child_pp;
+                        } else {
+                            $add_total = $original_grand_total_pp;
+                        }
+                        $total = $base_cost + $add_total;
+                        $total = $total / $currency; // convert to display currency
+                        // Keep the minimum cost across packages for this occupancy type
+                        if ($total < $occupancy_price_map[$type]) {
+                            $occupancy_price_map[$type] = $total;
+                        }
+                    }
+                }
+            }
+
+            // Sort occupancy types by price (ascending), exclude any that have no valid price
+            $sorted_occupancy_types = [];
+            foreach ($all_occupancy_types as $type) {
+                if ($occupancy_price_map[$type] < PHP_FLOAT_MAX) {
+                    $sorted_occupancy_types[$type] = $occupancy_price_map[$type];
+                }
+            }
+            uasort($sorted_occupancy_types, function($a, $b) {
+                return $a <=> $b;
+            });
+            $all_occupancy_types = array_keys($sorted_occupancy_types);
+
+            // Now build available_occupancy_types in this sorted order
+            $available_occupancy_types = [];
+            foreach ($all_occupancy_types as $type) {
+                $available_occupancy_types[$type] = true;
+            }
+            
+            $cost_header_text = !empty($hotel_markup_percentage) ? 'Margin Per Room / Night' : 'Margin Per Person';
+    
+            // MODIFIED: Create ONE table with both margins side by side
+            $cost_html .= '<table border="1" cellpadding="6" cellspacing="0" style="width:100%; border-collapse:collapse; text-align:left;">';
+            
+            // First header row - Main headers for both margins
+            $cost_html .= '<tr style="background:#d6d8d9; font-weight:bold;">';
+            $cost_html .= '<th rowspan="3">Package</th>';
+            $cost_html .= '<th rowspan="3">Hotel</th>';
+            // FIXED: Each occupancy type has 3 columns (Room Category, Original Margin, Reduced Margin)
+            $cost_html .= '<th colspan="' . (count($available_occupancy_types) * 3) . '" style="text-align:center;">' . $cost_header_text . '</th>';
+            $cost_html .= '</tr>';
+            
+            // Second header row - Subheaders for each occupancy type
+            $cost_html .= '<tr style="background:#d6d8d9; font-weight:bold;">';
+            foreach (array_keys($available_occupancy_types) as $type) {
+                $display_type = ($type === 'Double') ? 'Double/Twin' : $type;
+                // FIXED: Each occupancy type spans 3 columns
+                $cost_html .= '<th colspan="3">' . $display_type . '</th>';
+            }
+            $cost_html .= '</tr>';
+            
+            // Third header row - Column details
+            $cost_html .= '<tr style="background:#d6d8d9; font-weight:bold;">';
+            foreach (array_keys($available_occupancy_types) as $type) {
+                $cost_html .= '<th style="white-space: nowrap !important;">Room Category</th>';
+                $cost_html .= '<th>Margin</th>';
+                $cost_html .= '<th>Reduced Margin</th>';
+            }
+            $cost_html .= '</tr>';
+            
+            $package_count = count($packages);
+            $current_package = 0;
+            
+            foreach ($packages as $pkg) {
+                $current_package++;
+                
+                // Group same hotel names across multiple nights
+                $grouped_hotels = [];
+                $hotel_extras = [];
+                
+                foreach ($pkg['hotels'] as $hotel) {
+                    $name = $hotel['name'];
+                    $rating = $hotel['rating'];
+                    $night_no = $hotel['night_no'];
+                    $has_early_checkin = $hotel['has_early_checkin'] ?? false;
+                    $has_late_checkout = $hotel['has_late_checkout'] ?? false;
+            
+                    if (!isset($grouped_hotels[$name])) {
+                        $grouped_hotels[$name] = [
+                            'name' => $name,
+                            'rating' => $rating,
+                            'nights' => [],
+                        ];
+                        $hotel_extras[$name] = [
+                            'early_checkin' => $has_early_checkin,
+                            'late_checkout' => $has_late_checkout
+                        ];
+                    }
+                    $grouped_hotels[$name]['nights'][] = $night_no;
+                }
+            
+                $rowspan = count($grouped_hotels);
+                $first_row = true;
+            
+                // Check for each occupancy type if all hotels have same room categories
+                $same_room_categories = [];
+                foreach (array_keys($available_occupancy_types) as $type) {
+                    $all_categories_same = true;
+                    $first_hotel_categories = null;
+                    
+                    foreach ($grouped_hotels as $hotel_name => $hotel_data) {
+                        $current_categories = $pkg['hotel_room_occupancies'][$hotel_name][$type] ?? [];
+                        $normalized_categories = array_map(function($cat) {
+                            if (strpos($cat, '(') !== false) {
+                                $parts = explode('(', $cat, 2);
+                                return trim($parts[0]);
+                            }
+                            return trim($cat);
+                        }, $current_categories);
+                        sort($normalized_categories);
+                        
+                        if ($first_hotel_categories === null) {
+                            $first_hotel_categories = $normalized_categories;
+                        } else {
+                            if ($first_hotel_categories != $normalized_categories) {
+                                $all_categories_same = false;
+                                break;
+                            }
+                        }
+                    }
+                    $same_room_categories[$type] = $all_categories_same;
+                }
+            
+                $hotel_index = 0;
+                $total_hotels = count($grouped_hotels);
+                foreach ($grouped_hotels as $hotel_name => $hotel_data) {
+                    $hotel_index++;
+                    $name = strstr($hotel_data['name'], '_', true);
+                    $rating = $hotel_data['rating'];
+                    $hotel_info = $this->get_hotel_bouting_resort_status($name);
+                    if ($hotel_info && isset($hotel_info['booting_resort']) && $hotel_info['booting_resort'] == 'yes') {
+                        $stars = 'BR';
+                    } else {
+                        $rating_value = (int) str_replace('_', ' ', $rating);
+                        $stars = '<span style="color: #ecc900ff;font-size:20px;">';
+                        
+                        for ($i = 1; $i <= 5; $i++) {
+                            if ($i <= $rating_value) {
+                                $stars .= '★';
+                            }
+                        }
+                        $stars .= '</span>';
+                    }
+                    
+                    $unique_nights = array_unique($hotel_data['nights']);
+                    $total_nights = count(array_filter($unique_nights, fn($n) => $n > 0));
+                    
+                    // Add extras info to nights text
+                    $extras = [];
+                    if ($hotel_name === $pkg['first_night_hotel'] && $hotel_extras[$hotel_name]['early_checkin']) {
+                        $extras[] = 'Guaranteed Early Check-In Included';
+                    }
+                    if ($hotel_name === $pkg['last_night_hotel'] && $hotel_extras[$hotel_name]['late_checkout']) {
+                        $extras[] = 'Late Checkout';
+                        $total_nights += 1; 
+                    }
+                    
+                    $nights_text ='('.$total_nights . 'N)';
+                    if (!empty($extras)) {
+                        $nights_text = '(' . implode(' + ', $extras) . ') '.$nights_text;
+                    }
+                    
+                    $cost_html .= '<tr>';
+                    if ($first_row) {
+                        $cost_html .= '<td rowspan="' . $rowspan . '" style="font-weight:bold;background-color: #d6d8d9;">' . $pkg['name'] . '</td>';
+                    }
+            
+                    $cost_html .= '<td style="background-color: #d6d8d9;"> '.$nights_text.' <span style="color:#6060a9;font-weight:bold;">' . $name . '</span> '. $stars .'</td>';
+            
+                    // For each occupancy type
+                    foreach (array_keys($available_occupancy_types) as $type) 
+                    {
+                        $room_categories = $pkg['hotel_room_occupancies'][$hotel_name][$type] ?? [];
+                        
+                        // Room Category column
+                        if ($same_room_categories[$type]) {
+                            if ($first_row) {
+                                $cost_html .= '<td style="background-color: #d6d8d9;white-space: nowrap !important;" rowspan="' . $rowspan . '">';
+                                if (!empty($room_categories)) {
+                                    foreach ($room_categories as $category) {
+                                        if (strpos($category, '_nights_') !== false) {
+                                                // Remove the _nights_XX suffix
+                                                $category_parts = explode('_nights_', $category, 2);
+                                                $clean_category = $category_parts[0];
+                                                
+                                                // Also check if there are still underscores that should be spaces
+                                                if (strpos($clean_category, '_') !== false && strpos($clean_category, ' ') === false) {
+                                                    // Replace underscores with spaces for readability
+                                                    $clean_category = str_replace('_', ' ', $clean_category);
+                                                }
+                                            } else {
+                                                $clean_category = $category;
+                                            }
+                                        if (strpos($clean_category, '(') !== false) {
+                                            $parts = explode('(', $clean_category, 2);
+                                            $prefix = trim($parts[0]);
+                                            $category_id = $this->get_category_id_by_name($category, $hotel_name);
+                                            if ($category_id > 0) {
+                                                $cost_html .= '<a href="'.base_url('room-category-page/'.base64_encode($category_id)).'" target="_blank" style="color: #131313ff;text-decoration: underline;text-decoration-color: blue; " title="Click to view category details">';
+                                                $cost_html .= $prefix . '<img src="'.base_url('assets/images/camera_icon.png').'" alt="Room Category Icon" style="width: 30px;margin-left: 5px;vertical-align: middle;" ><br>';
+                                                $cost_html .= '</a>';
+                                            } else {
+                                                $cost_html .= $prefix . '<br>';
+                                            }
+                                        } else {
+                                            $category_id = $this->get_category_id_by_name($category, $hotel_name);
+                                            if ($category_id > 0) {
+                                                $cost_html .= '<a href="'.base_url('room-category-page/'.base64_encode($category_id)).'" target="_blank" style="color: #131313ff;text-decoration: underline;text-decoration-color: blue;" title="Click to view category details">';
+                                                $cost_html .= $clean_category . '<img src="'.base_url('assets/images/camera_icon.png').'" alt="Room Category Icon" style="width: 30px;margin-left: 5px;vertical-align: middle;" ><br>';
+                                                $cost_html .= '</a>';
+                                            } else {
+                                                $cost_html .= $clean_category . '<br>';
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    $cost_html .= 'NA';
+                                }
+                                $cost_html .= '</td>';
+                            }
+                        } else {
+                            $cost_html .= '<td style="background-color: #d6d8d9;white-space: nowrap !important;">';
+                            if (!empty($room_categories)) {
+                                foreach ($room_categories as $category) {
+                                        if (strpos($category, '_nights_') !== false) {
+                                            // Remove the _nights_XX suffix
+                                            $category_parts = explode('_nights_', $category, 2);
+                                            $clean_category = $category_parts[0];
+                                            
+                                            // Also check if there are still underscores that should be spaces
+                                            if (strpos($clean_category, '_') !== false && strpos($clean_category, ' ') === false) {
+                                                // Replace underscores with spaces for readability
+                                                $clean_category = str_replace('_', ' ', $clean_category);
+                                            }
+                                        } else {
+                                            $clean_category = $category;
+                                        }
+                                    if (strpos($clean_category, '(') !== false) {
+                                        $parts = explode('(', $clean_category, 2);
+                                        $prefix = trim($parts[0]);
+                                        $category_id = $this->get_category_id_by_name($category, $hotel_name);
+                                        if ($category_id > 0) {
+                                            $cost_html .= '<a href="'.base_url('room-category-page/'.base64_encode($category_id)).'" target="_blank" style="color: #131313ff;text-decoration: underline;text-decoration-color: blue;" title="Click to view category details">';
+                                            $cost_html .= $prefix . '<img src="'.base_url('assets/images/camera_icon.png').'" alt="Room Category Icon" style="width: 30px;margin-left: 5px;vertical-align: middle;" ><br>';
+                                            $cost_html .= '</a>';
+                                        } else {
+                                            $cost_html .= $prefix . '<br>';
+                                        }
+                                    } else {
+                                        $category_id = $this->get_category_id_by_name($category, $hotel_name);
+                                        if ($category_id > 0) {
+                                            $cost_html .= '<a href="'.base_url('room-category-page/'.base64_encode($category_id)).'" target="_blank" style="color: #131313ff;text-decoration: underline;text-decoration-color: blue;" title="Click to view category details">';
+                                            $cost_html .= $clean_category . '<img src="'.base_url('assets/images/camera_icon.png').'" alt="Room Category Icon" style="width: 30px;margin-left: 5px;vertical-align: middle;" ><br>';
+                                            $cost_html .= '</a>';
+                                        } else {
+                                            $cost_html .= $clean_category . '<br>';
+                                        }
+                                    }
+                                }
+                            } else {
+                                $cost_html .= 'NA';
+                            }
+                            $cost_html .= '</td>';
+                        }
+                        
+                        // Original Margin column
+                        if (!empty($hotel_markup_percentage)) {
+                            // CASE 1: Margin Per Room / Night (hotel markup percentage exists)
+                            // if ($first_row) {
+
+                                
+                                $hotel_costs = $pkg['hotel_wise_costs'][$hotel_name] ?? [];
+                                $base_cost = isset($hotel_costs[$type]) ? $hotel_costs[$type] : 0;
+                                
+                                // Calculate markup amount (not total cost)
+                                $effective_percentage = $hotel_markup_percentage;
+                                $markup_amount = $base_cost * ($hotel_markup_percentage / 100);
+                                $final_markup = $markup_amount / $currency;
+
+                                $markup_id = 'package_' . preg_replace('/[^a-z0-9]/i', '_', $pkg['name']) 
+                                                . '_' . preg_replace('/[^a-z0-9]/i', '_', $name) 
+                                                . '_' . $type;
+                                $cost_html .= '<td style="background-color: #d6d8d9;" >';
+                                if ($final_markup > 0) {
+                                    $cost_html .= '<span style="font-weight: 600;">$' . number_format($final_markup, 0);
+                                } else {
+                                    $cost_html .= '-';
+                                }
+                                $cost_html .= '</span><br><small>(<span class="updated-markup" data-markup-id="' . $markup_id . '">' . $effective_percentage . '%</span>)</small>';
+                                $cost_html .= '</td>';
+                        // }
+                        } else {
+                            // CASE 2: Margin Per Person (no hotel markup percentage)
+                            if ($first_row) {
+                                $effective_percentage = $markup_percentage;
+                                $base_cost = isset($pkg['merged_costs'][$type]) ? $pkg['merged_costs'][$type] : 0;
+                                $markup_amount = $base_cost * ($effective_percentage / 100);
+                                $add_markup = (stripos($type, 'CNB') !== false || stripos($type, 'CWB') !== false) 
+                                            ? $land_package_markup_child_pp 
+                                            : $land_package_markup_pp;
+                                $total_markup = ($markup_amount + $add_markup) / $currency;
+
+                                // Create a unique markup ID тАУ no hotel because this cell spans all hotels
+                                $markup_id = 'package_' . preg_replace('/[^a-z0-9]/i', '_', $pkg['name']) . '_' . $type;
+
+                                $cost_html .= '<td style="background-color: #d6d8d9;font-weight: bold;" rowspan="' . $rowspan . '">';
+                                if ($total_markup > 0) {
+                                    $cost_html .= '<span style="font-weight: 600;">$' . number_format($total_markup, 0);
+                                } else {
+                                    $cost_html .= '-';
+                                }
+                                // Add the percentage span with the unique ID
+                                $cost_html .= '</span> <br><small>(<span class="updated-markup" data-markup-id="' . $markup_id . '">' . $effective_percentage . '%</span>)</small>';
+                                $cost_html .= '</td>';
+                            }
+                        }
+                        
+                        // Reduced Margin Input column
+                        if (!empty($hotel_markup_percentage)) {
+                            // CASE 1: Reduced Margin for Per Room / Night
+                            // if ($first_row) {
+                                $effective_percentage = $hotel_markup_percentage;
+                                $hotel_costs = $pkg['hotel_wise_costs'][$hotel_name] ?? [];
+                                $base_cost = isset($hotel_costs[$type]) ? $hotel_costs[$type] : 0;
+                                $markup_amount = $base_cost * ($effective_percentage / 100);
+                                $original_markup = $markup_amount / $currency;
+
+                                $reduced_margin_value = 0;
+                                foreach ($reduced_margins_array as $margin) {
+                                    if ($margin['type'] == 'package_adult' && 
+                                        $margin['package'] == $pkg['name'] &&
+                                        $margin['hotel'] == $name &&
+                                        $margin['occupancy'] == $type) {
+                                        $reduced_margin_value = floatval($margin['value']);
+                                        break;
+                                    }
+                                }
+
+                                $markup_id = 'package_' . preg_replace('/[^a-z0-9]/i', '_', $pkg['name']) 
+                                        . '_' . preg_replace('/[^a-z0-9]/i', '_', $name) 
+                                        . '_' . $type;
+
+                                $data_attrs = 'data-package="' . htmlspecialchars($pkg['name'], ENT_QUOTES) . '" ';
+                                $data_attrs .= 'data-hotel="' . htmlspecialchars($name, ENT_QUOTES) . '" ';
+                                $data_attrs .= 'data-room-category="' . htmlspecialchars(preg_replace('/_.*/', '', implode(', ', $room_categories)), ENT_QUOTES) . '" ';
+                                $data_attrs .= 'data-occupancy="' . $type . '" ';
+                                $data_attrs .= 'data-rating="' . ucwords(str_replace('_', ' ', $rating)) . '" ';
+                                $data_attrs .= 'data-col-index="package_' . $current_package . '_' . $hotel_index . '_' . $type . '" ';
+                                $data_attrs .= 'data-type="package_adult" ';
+                                $data_attrs .= 'data-original-margin="' . $original_markup . '" ';
+                                $data_attrs .= 'data-original-markup="' . $effective_percentage . '" ';
+                                $data_attrs .= 'data-markup-id="' . $markup_id . '" ';
+
+                                $cost_html .= '<td style="background-color: #d6d8d9;">';
+                                $cost_html .= '<input type="number" class="reduced-margin-input package-markup-input" ' . $data_attrs . ' value="' . $reduced_margin_value . '" style="width:70px;" min="0">';
+                                $cost_html .= '</td>';
+                            // }
+                        } else {
+                            // CASE 2: Reduced Margin for Per Person
+                            // Reduced Margin Input (Case 2)
+                            if ($first_row) {
+                                $effective_percentage = $markup_percentage;
+                                $base_cost = isset($pkg['merged_costs'][$type]) ? $pkg['merged_costs'][$type] : 0;
+                                $markup_amount = $base_cost * ($effective_percentage / 100);
+                                $add_markup = (stripos($type, 'CNB') !== false || stripos($type, 'CWB') !== false) 
+                                            ? $land_package_markup_child_pp 
+                                            : $land_package_markup_pp;
+                                $original_markup = ($markup_amount + $add_markup) / $currency;
+
+                                $reduced_margin_value = 0;
+                                foreach ($reduced_margins_array as $margin) {
+                                    if ($margin['type'] == 'package_adult' && 
+                                        $margin['package'] == $pkg['name'] &&
+                                        $margin['hotel'] == $name &&
+                                        $margin['occupancy'] == $type) {
+                                        $reduced_margin_value = floatval($margin['value']);
+                                        break;
+                                    }
+                                }
+
+                                $markup_id = 'package_' . preg_replace('/[^a-z0-9]/i', '_', $pkg['name']) . '_' . $type;
+
+                                $data_attrs = 'data-package="' . htmlspecialchars($pkg['name'], ENT_QUOTES) . '" ';
+                                $data_attrs .= 'data-hotel="' . htmlspecialchars($name, ENT_QUOTES) . '" ';
+                                $data_attrs .= 'data-room-category="' . htmlspecialchars(preg_replace('/_.*/', '', implode(', ', $room_categories)), ENT_QUOTES) . '" ';
+                                $data_attrs .= 'data-occupancy="' . $type . '" ';
+                                $data_attrs .= 'data-rating="' . ucwords(str_replace('_', ' ', $rating)) . '" ';
+                                $data_attrs .= 'data-col-index="package_' . $current_package . '_' . $hotel_index . '_' . $type . '" ';
+                                $data_attrs .= 'data-type="package_adult" ';
+                                $data_attrs .= 'data-original-margin="' . $original_markup . '" ';
+                                $data_attrs .= 'data-original-markup="' . $effective_percentage . '" ';
+                                $data_attrs .= 'data-markup-id="' . $markup_id . '" ';
+
+                                $cost_html .= '<td style="background-color: #d6d8d9;" rowspan="' . $rowspan . '">';
+                                $cost_html .= '<input type="number" class="reduced-margin-input package-markup-input" ' . $data_attrs . ' value="' . $reduced_margin_value . '" style="width:70px;" min="0">';
+                                $cost_html .= '</td>';
+                            }
+                        }
+                    }
+            
+                    if ($first_row) {
+                        $first_row = false;
+                    }
+                    $cost_html .= '</tr>';
+                }
+                
+                if ($current_package < $package_count) {
+                    $total_columns = 2 + (count($available_occupancy_types) * 3); // FIXED: 3 columns per occupancy type
+                    $cost_html .= '<tr><td colspan="' . $total_columns . '" style="border-bottom: 4px solid #0c0c0cff; padding: 0; line-height: 4px;"></td></tr>';
+                }
+            }
+            
+            // Add Land Package Markup rows at the bottom ONLY for Per Room Per Night
+            if (!empty($hotel_markup_percentage)) {
+                $total_columns_for_land = 2 + (count($available_occupancy_types) * 3);
+
+                $converted_land_markup = ($currency > 0) 
+                    ? number_format($land_package_markup_pp / $currency, 0) 
+                    : number_format($land_package_markup_pp, 0);
+
+                $effective_percentage = $markup_percentage; 
+
+                $cost_html .= '<tr>
+                    <th style="background-color:#d6d8d9;color:red;">Land Package Margin Per Person</th>
+                    <td colspan="'.($total_columns_for_land - 1).'" style="background-color:#d6d8d9;color:red; font-weight: bold;">
+                        $'.$converted_land_markup.' <small>(<span class="updated-markup" data-markup-id="land_adult">'.$effective_percentage.'%</span>)</small>
+                    </td>
+                </tr>';
+
+                $reduced_land_adult_value = 0;
+                foreach ($reduced_land_margins_array as $margin) {
+                    if ($margin['type'] == 'land_adult') {
+                        $reduced_land_adult_value = floatval($margin['value']);
+                        break;
+                    }
+                }
+
+                $cost_html .= '<tr>
+                    <th style="background-color:#d6d8d9;color:blue;">Reduced Land Package Margin Per Person</th>
+                    <td colspan="'.($total_columns_for_land - 1).'" style="background-color:#d6d8d9;color:red;">'; 
+                        $data_attrs_land = 'data-hotel="land_package" ';
+                        $data_attrs_land .= 'data-room-category="land_package" ';
+                        $data_attrs_land .= 'data-occupancy="land_package" ';
+                        $data_attrs_land .= 'data-rating="land_package" ';
+                        $data_attrs_land .= 'data-col-index="land_adult" ';
+                        $data_attrs_land .= 'data-type="land_adult" ';
+                        $data_attrs_land .= 'data-original-margin="' . $converted_land_markup . '" ';
+                        $data_attrs_land .= 'data-original-markup="' . $effective_percentage . '" ';
+                        $cost_html .= '<input type="number" class="reduced-margin-input land-markup-input" ' . $data_attrs_land . ' value="'.$reduced_land_adult_value.'" style="width:100px;" min="0">
+                    </td>
+                </tr>';
+
+                // --- Child land package if applicable ---
+                if ($total_child_persons > 0 && ($has_cnb_occupancies || $has_cwb_occupancies)) {
+                    $converted_land_markup_child = ($currency > 0) 
+                        ? number_format($land_package_markup_child_pp / $currency, 0) 
+                        : number_format($land_package_markup_child_pp, 0);
+
+                    $cost_html .= '<tr>
+                        <th style="background-color:#d6d8d9;color:red;">Land Package Margin Per Child</th>
+                        <td colspan="'.($total_columns_for_land - 1).'" style="background-color:#d6d8d9;color:red; font-weight: bold;">
+                            $'.$converted_land_markup_child.' <small>(<span class="updated-markup" data-markup-id="land_child">'.$effective_percentage.'%</span>)</small>
+                        </td>
+                    </tr>';
+
+                    $reduced_land_child_value = 0;
+                    foreach ($reduced_land_margins_array as $margin) {
+                        if ($margin['type'] == 'land_child') {
+                            $reduced_land_child_value = floatval($margin['value']);
+                            break;
+                        }
+                    }
+
+                    $cost_html .= '<tr>
+                        <th style="background-color:#d6d8d9;color:blue;">Reduced Land Package Margin Per Child</th>
+                        <td colspan="'.($total_columns_for_land - 1).'" style="background-color:#d6d8d9;color:red;">';  
+                            $data_attrs_land_child = 'data-hotel="land_package" ';
+                            $data_attrs_land_child .= 'data-room-category="land_package" ';
+                            $data_attrs_land_child .= 'data-occupancy="land_package" ';
+                            $data_attrs_land_child .= 'data-rating="land_package" ';
+                            $data_attrs_land_child .= 'data-col-index="land_child" ';
+                            $data_attrs_land_child .= 'data-type="land_child" ';
+                            $data_attrs_land_child .= 'data-original-margin="' . $converted_land_markup_child . '" ';
+                            $data_attrs_land_child .= 'data-original-markup="' . $effective_percentage . '" ';
+                            $cost_html .= '<input type="number" class="reduced-margin-input land-markup-input" ' . $data_attrs_land_child . ' value="'.$reduced_land_child_value.'" style="width:100px;" min="0">
+                        </td>
+                    </tr>';
+                }
+            }
+            
+            $cost_html .= '</table>';
+            $cost_html .='
+                <script>
+                function updateMarkup(inputEl) {
+                    var $input = $(inputEl);
+                    console.log("Input changed:", $input);
+                    var reduced = parseFloat($input.val()) || 0;
+                    var originalMargin = parseFloat($input.data("original-margin"));
+                    var originalMarkup = parseFloat($input.data("original-markup"));
+                    var type = $input.data("type");
+                    var colIndex = $input.data("col-index");
+
+                    console.log({ reduced, originalMargin, originalMarkup, type, colIndex });
+
+                    if (!originalMargin || !originalMarkup) {
+                        console.warn("Missing original data");
+                        return;
+                    }
+
+                    var baseCost = (originalMargin * 100) / originalMarkup;
+                    var newMargin = Math.max(originalMargin - reduced, 0);
+                    var updatedMarkup = (newMargin / baseCost) * 100;
+
+                    console.log("Calculated updated markup:", updatedMarkup);
+
+                    var $markupCell = null;
+
+                    if (type === "adult" && colIndex !== undefined) {
+                        $markupCell = $(".updated-markup[data-markup-id=\'adult_" + colIndex + "\']");
+                    } 
+                    else if (type === "cnb") {
+                        var hotel = $input.data("hotel");
+                        var hotelId = hotel.replace(/[^a-z0-9]/gi, "_");
+                        $markupCell = $(".updated-markup[data-markup-id=\'cnb_" + hotelId + "\']");
+                    }
+                    else if (type === "cwb") {
+                        var hotel = $input.data("hotel");
+                        var hotelId = hotel.replace(/[^a-z0-9]/gi, "_");
+                        $markupCell = $(".updated-markup[data-markup-id=\'cwb_" + hotelId + "\']");
+                    }
+                    else if (type === "package_adult") {
+                        var markupId = $input.data("markup-id");
+                        $markupCell = $(".updated-markup[data-markup-id=\'" + markupId + "\']");
+                    }
+                    else if (type === "land_adult") {
+                        $markupCell = $(".updated-markup[data-markup-id=\'land_adult\']");
+                    }
+                    else if (type === "land_child") {
+                        $markupCell = $(".updated-markup[data-markup-id=\'land_child\']");
+                    }
+
+                    console.log("Found markup cell:", $markupCell);
+                    if ($markupCell && $markupCell.length) {
+                        $markupCell.text(updatedMarkup.toFixed(0) + "%");
+                    } else {
+                        console.warn("Markup cell not found for", type, colIndex);
+                    }
+                }
+
+                $(document).on("input", ".reduced-margin-input", function () {
+                    updateMarkup(this);
+                });
+
+                $(document).ready(function () {
+                    $(".reduced-margin-input").each(function () {
+                        updateMarkup(this);
+                    });
+                });
+                </script>';
+        }
+        
+        
+        
+        return $cost_html;
+    }
+    
+    private function get_hotel_details_by_name($hotel_name)
+    {
+        $this->db->select('id, name, city');
+        $this->db->from('hotels');
+        $this->db->like('name', $hotel_name);
+        $this->db->limit(1);
+        $query = $this->db->get();
+        
+        if ($query->num_rows() > 0) {
+            return $query->row_array();
+        }
+        
+        return false;
+    }
+    
+    private function save_full_cost_html($quote_id, $html_content, $html_content_itinerary)
+    {
+        if ($quote_id > 0 && !empty($html_content)) {
+            $sanitized_html = $this->db->escape($html_content);
+            $sanitized_html_itinerary = $this->db->escape($html_content_itinerary);
+            
+            $update_data = array(
+                'cost_table_html' => $html_content,
+                'itinerary_html' => $html_content_itinerary,
+                // 'updated_at' => date('Y-m-d H:i:s')
+            );
+            
+            $this->db->where('id', $quote_id);
+            $result = $this->db->update('quotations', $update_data);
+            
+            // рд▓реЙрдЧ рдХрд░реЗрдВ
+            if ($result) {
+                log_message('info', "Full cost HTML saved for Quote ID: {$quote_id}");
+                return true;
+            } else {
+                log_message('error', "Failed to save cost HTML for Quote ID: {$quote_id}");
+                return false;
+            }
+        }
+        return false;
+    }
+    
+    private function get_hotel_bouting_resort_status($hotel_name)
+    {
+        // Assuming you have a database connection
+        $query = $this->db->select('booting_resort')
+                        ->from('hotels')
+                        ->where('name', $hotel_name)
+                        ->get();
+        
+        if ($query->num_rows() > 0) {
+            return $query->row_array();
+        }
+        
+        return null;
+    }
+
+
+    
+    public function brief_itinerary($id)
+    {
+        $id= base64_decode($id);
+        $where = 'quotations.enquiry_id = ' . $id;
+        $result = $this->common_model->get_data('quotations', '', '', '*', $where, 'ORDER BY id DESC LIMIT 1', false);
+
+        $itinerary_json = $result[0]->itinerary_details ?? '[]';
+        $decoded_itinerary = json_decode($itinerary_json, true);
+
+        $site_map = [];
+        $sites = $this->common_model->get_data('sites');
+        foreach ($sites as $site) {
+            $site_map[$site->id] = $site->site_name;
+            $site_map2[$site->id] = $site->description;
+            $site_map3[$site->id] = $site->entry_ticket_for;
+            $site_map4[$site->id] = $site->departing_time_from_hotel;
+            $site_map5[$site->id] = $site->duration_hours;
+            $site_map6[$site->id] = $site->duration_minutes;
+        }
+
+        $brief_itinerary = [];
+        foreach ($decoded_itinerary as $day_data) {
+            $day_sites = [];
+
+            // Safely access itinerary array only if it's set and is an array
+            if (isset($day_data['itinerary']) && is_array($day_data['itinerary'])) {
+                foreach ($day_data['itinerary'] as $entry) {
+                    $site_id = $entry['site_id'] ?? null;
+                    if ($site_id) {
+                        $day_sites[] = [
+                            'departing_time_from_hotel'=> $site_map4[$site_id] ?? '',
+                            'site_name' => $site_map[$site_id] ?? '',
+                            'description' => $site_map2[$site_id] ?? '',
+                            'entry_ticket_for' => $site_map3[$site_id] ?? '',
+                            'duration_hours' => $site_map5[$site_id] ?? '',
+                            'duration_minutes' => $site_map6[$site_id] ?? '',
+                        ];
+                    }
+                }
+            }
+            $brief_itinerary[] = $day_sites;
+        }
+        $data['brief_itinerary'] = $brief_itinerary;
+
+        log_user_activity('Brief Itinerary', $this->session->userdata('id'), 'View');
+        $this->load->view('admin/brief_itinerary', $data);
+    }
+
+   
+    
+    public function airline_city(){
+        $response = array();
+        $this->db->select('DISTINCT(departure_city)');
+        $this->db->where("departure_city like '%" . trim($this->input->post('search')) . "%' ");
+        $this->db->where('status', 'active');
+        $this->db->limit(10);
+        $records = $this->db->get('flight_schedule')->result();
+        foreach ($records as $row) {
+            $response[] = array("departure_city" => trim($row->departure_city), "label" => trim($row->departure_city));
+        }
+        echo json_encode($response);
+    }
+
+    public function get_airlines(){
+        $departure_city = $this->input->post('departure_city');
+        $arrival_city = $this->input->post('arrival_city');
+        $search = trim($this->input->post('search'));
+        $where = '';
+        if($departure_city != "" && $arrival_city != ""){
+            $where = ' flight_schedule.departure_city = "'.$departure_city.'" AND flight_schedule.arrival_city = "'.$arrival_city.'" AND ';
+        }else if($departure_city != "" && $arrival_city == ""){
+            $where = ' flight_schedule.departure_city = "'.$departure_city.'" AND ';
+        }
+        $where .= ' flight_schedule.status = "active" AND airlines.status="active"';
+        if($this->input->post('start_day')<>''){
+            $where .= ' AND (flight_schedule.days_of_operations LIKE "%'.trim($this->input->post('start_day')).'%"';
+            $where .= ' OR flight_schedule.days_of_operations  = "daily")';
+        }else if($this->input->post('end_day')<>''){
+            $where .= ' AND (flight_schedule.days_of_operations LIKE "%'.trim($this->input->post('end_day')).'%"';
+            $where .= ' OR flight_schedule.days_of_operations  = "daily")';
+        }
+        // $where .= ' AND LOWER(airlines.name) LIKE "%'.$search.'%"';
+        if (preg_match('/^([a-zA-Z]+)(\d+)$/', $search, $matches)) 
+        {
+            $airline_code = strtoupper($matches[1]); 
+            $flight_number = $matches[2];
+            $where .= ' AND ( UPPER(airlines.code) LIKE "%' . $airline_code . '%" AND flight_schedule.flight_number LIKE "%' . $flight_number . '%" )';
+        } else {
+                $where .= ' AND (LOWER(airlines.name) LIKE "%' . $search . '%" OR UPPER(airlines.code) LIKE "%' . strtoupper($search) . '%" OR CAST(flight_schedule.flight_number AS CHAR) LIKE "%' . $search . '%")';
+        }
+
+        $join = [['type' => '', 'join_table' => 'airlines', 'condition' => 'flight_schedule.airline_id = airlines.id'],];
+        $data = $this->common_model->get_data('flight_schedule','', '', '*',$where, '', $count = false,$join);
+        //echo $this->db->last_query();'<pre>';print_R($data);exit;
+        $response = [];
+        foreach ($data as $row) {
+            $response[] = array("label" => trim($row->name.' ('.$row->code.$row->flight_number.')'),'departure_time'=>trim($row->departure_time),'arrival_time'=>trim($row->arrival_time));
+        }
+        echo json_encode($response);
+        exit;
+    }
+
+    // **************************************************************************************
+	// get trains list
+    public function get_trains()
+    {
+        $from_city = trim($this->input->post('from_city'));
+        $to_city   = trim($this->input->post('to_city'));
+        $country    = trim($this->input->post('country'));
+        $search    = trim($this->input->post('search'));
+
+        // ЁЯЪл Do not return anything unless both cities are provided
+        if ($from_city === '' || $to_city === '') {
+            echo json_encode([]);
+            exit;
+        }
+
+        $where = 'train.status = "active" 
+                AND train_schedule.status = "active"
+                AND train_schedule.country = "'.$country.'"
+                AND train_schedule.departing_station = "'.$from_city.'"
+                AND train_schedule.arrival_station = "'.$to_city.'"';
+
+        if ($search !== '') {
+            $where .= ' AND (
+                LOWER(train.train_name) LIKE "%'.strtolower($search).'%"
+                OR train_schedule.train_number LIKE "%'.$search.'%"
+            )';
+        }
+
+        $join = [
+            [
+                'type' => 'LEFT',
+                'join_table' => 'train',
+                'condition'  => 'train_schedule.train_id = train.id'
+            ]
+        ];
+
+        $data = $this->common_model->get_data(
+            'train_schedule',
+            '',
+            '',
+            'train_schedule.*, train.train_name',
+            $where,
+            '',
+            false,
+            $join
+        );
+
+        $response = [];
+        foreach ($data as $row) {
+            $response[] = [
+                'label'    => $row->train_name.' ('.$row->train_number.')',
+                'train_id' => $row->id,
+                'types'    => json_decode($row->type, true),
+                // Include all day columns
+                'mon_dep_time' => $row->mon_dep_time,
+                'mon_arr_time' => $row->mon_arr_time,
+                'tue_dep_time' => $row->tue_dep_time,
+                'tue_arr_time' => $row->tue_arr_time,
+                'wed_dep_time' => $row->wed_dep_time,
+                'wed_arr_time' => $row->wed_arr_time,
+                'thu_dep_time' => $row->thu_dep_time,
+                'thu_arr_time' => $row->thu_arr_time,
+                'fri_dep_time' => $row->fri_dep_time,
+                'fri_arr_time' => $row->fri_arr_time,
+                'sat_dep_time' => $row->sat_dep_time,
+                'sat_arr_time' => $row->sat_arr_time,
+                'sun_dep_time' => $row->sun_dep_time,
+                'sun_arr_time' => $row->sun_arr_time,
+            ];
+        }
+
+        echo json_encode($response);
+        exit;
+    }
+    
+    
+    public function get_train_by_id()
+    {
+        $schedule_id = $this->input->post('schedule_id');
+        $from_city = $this->input->post('from_city');
+        $to_city = $this->input->post('to_city');
+        $country = $this->input->post('country');
+        
+        if (!$schedule_id || !$from_city || !$to_city) {
+            echo json_encode(null);
+            exit;
+        }
+        
+        $where = 'train.status = "active" 
+                AND train_schedule.status = "active"
+                AND train_schedule.country = "'.$country.'"
+                AND train_schedule.departing_station = "'.$from_city.'"
+                AND train_schedule.arrival_station = "'.$to_city.'"
+                AND train_schedule.id = "'.$schedule_id.'"'; // This is schedule ID
+        
+        $join = [
+            [
+                'type' => 'LEFT',
+                'join_table' => 'train',
+                'condition'  => 'train_schedule.train_id = train.id'
+            ]
+        ];
+        
+        $data = $this->common_model->get_data(
+            'train_schedule',
+            '',
+            '',
+            'train_schedule.*, train.train_name, train.id as actual_train_id',
+            $where,
+            '',
+            false,
+            $join
+        );
+        
+        if (!empty($data)) {
+            $row = $data[0];
+            $response = [
+                'label' => $row->train_name.' ('.$row->train_number.')',
+                'schedule_id' => $row->id,           // The schedule/route ID
+                'train_id' => $row->actual_train_id,  // The actual train ID
+                'train_name' => $row->train_name,
+                'train_number' => $row->train_number,
+                'types' => json_decode($row->type, true)
+            ];
+            echo json_encode($response);
+        } else {
+            echo json_encode(null);
+        }
+        exit;
+    }
+	
+    public function index(){
+        
+        if ($this->input->get('id') == '' || !is_numeric(base64_decode($this->input->get('id')))) {
+            $this->session->set_flashdata('message','<div class="alert alert-danger">Invalid details!</div>');
+            redirect('enquiry-followup');
+        }
+        $id = base64_decode($this->input->get('id'));
+        
+        $where = 'enquiry.id = '.$id;
+        $quotation_enquiry = $this->common_model->get_data('enquiry','', '', '*',$where, '', $count = false)[0];
+        $data['details'] = $quotation_enquiry;
+        //echo '<pre>';print_r($quotation_enquiry);exit;
+        $capacity = $quotation_enquiry->number_persons + $quotation_enquiry->number_child;        
+        
+        $where = 'enquiry.status = "confirm" AND enquiry.enquiry_abbr = "'.$quotation_enquiry->enquiry_abbr.'" AND enquiry.number_of_nights <= '.$quotation_enquiry->number_of_nights;
+        $where .= ' AND enquiry.number_persons <= '.$quotation_enquiry->number_persons .' AND enquiry.number_child <= '.$quotation_enquiry->number_child; 
+        $where .= ' AND date(enquiry.date) >= "'.date('Y-m-d', strtotime('-30 days')).'"';
+        $join = [['type' => '', 'join_table' => 'arrivals', 'condition' => 'enquiry.id = arrivals.enquiry_id'],
+                ['type' => '', 'join_table' => 'itinerary', 'condition' => '(itinerary.arrival_id = arrivals.id AND itinerary.status="active")'],];
+        $data['itinerary'] = $this->common_model->get_data('enquiry','', '', 'DISTINCT enquiry.enquiry_no,enquiry.*,arrivals.id AS arrival_id',$where, '', $count = false,$join);
+        //echo $this->db->last_query();exit;
+        
+        $select = 'hotels.id,hotels.name';
+        $where = 'enquiry.status = "confirm" AND enquiry.enquiry_abbr = "'.$quotation_enquiry->enquiry_abbr.'" AND enquiry.number_of_nights = '.$quotation_enquiry->number_of_nights;
+        $join = [['type' => '', 'join_table' => 'arrivals', 'condition' => 'enquiry.id = arrivals.enquiry_id'],
+                ['type' => '', 'join_table' => 'arrival_hotel_details', 'condition' => 'arrivals.enquiry_id = arrival_hotel_details.enquiry_id'],
+                ['type' => '', 'join_table' => 'hotels', 'condition' => 'hotels.id = arrival_hotel_details.hotel_id'],];
+        $data['hotels'] = $this->common_model->get_data('enquiry','', '', $select,$where, ' GROUP BY hotels.id', $count = false,$join);
+        
+        $char = substr($quotation_enquiry->enquiry_abbr, 1, 2);
+        $country = COUNTRY_ABBR;//['A' => 'azerbaijan', 'B' => 'belarus', 'G' => 'georgia', 'K' => 'kazakhstan'];
+        $where = ' transportation.status = "active" AND LOWER(transportation.country) = "'.$country[$char].'"';
+        $where .= ' AND (transportation.capacity >='.$capacity.' AND transportation.capacity <='.($capacity+1).')';
+        $data['transportation'] = $this->common_model->get_data('transportation','', '', '*',$where, '', $count = false);
+        
+        //echo '<pre>';print_r($data);exit;
+         
+        $this->load->view('admin/quotation_suggesstions',$data);
+    }
+    
+    
+    public function create(){
+        
+        $_GET = $_POST;
+        
+        // echo '<pre>';print_r($_GET);exit;
+		$category_wise_nights_json = $this->input->post('category_wise_nights');
+        // echo '<pre>';print_r($category_wise_nights_json);exit;
+
+        $category_wise_nights = [];
+
+        if (!empty($category_wise_nights_json)) {
+            $category_wise_nights = json_decode($category_wise_nights_json, true);
+        }
+
+        $enquiry_id = base64_decode(urldecode($this->input->get('enquiry_id')));
+        $where = 'enquiry.id = '.$enquiry_id;
+        $data['details'] = $enquiry = $this->common_model->get_data('enquiry','', '', '*',$where, '', $count = false)[0];
+		
+	    $char = substr($enquiry->enquiry_abbr,1,1);
+        $country = ['A'=>'azerbaijan','B'=>'belarus','G'=>'georgia','K'=>'kazakhstan', 'U'=>'uzbekistan'];
+		$data['country'] = $country[$char];
+
+	    $where = 'country = "'.$country[$char] .'" AND itinerary_templates_content.status != "deleted"';
+        $template = $this->common_model->get_data('itinerary_templates_content','', '', '*',$where, ' ORDER BY itinerary_templates_content.id ASC', $count = false);
+        
+	    /*$select = 'sites.*'; // For later use
+        $where = 'location_masters.destination_type = "outsidecity" AND location_masters.status = "active" AND LOWER(location_masters.country)="'.$country[$char].'"';
+        $join = [['type' => '', 'join_table' => 'location_masters', 'condition' => 'location_masters.id = sites.location_ids'],];
+        $sites = $this->common_model->get_data('sites','', '', $select,$where, '', $count = false,$join);*/
+		
+        $data['airport_transfer_in'] = $data['airport_transfer_out'] = [];
+        if($this->input->get('airport_pick_drop')=='yes' && $this->input->get('chk_vehicle')<>''){
+            $transport_id = implode(',',$this->input->get('chk_vehicle'));
+            $where = ' transportation_costs.transport_id IN ('.$transport_id.') AND transportation_costs.type IN ("airport-transfer-in","airport-transfer-out")';
+            $where .= ' AND date(transportation_costs.valid_from) <= "'.$data['details']->check_in_date.'" AND date(transportation_costs.valid_to) >= "'.$data['details']->check_out_date.'"';
+            $join = [['type' => 'LEFT', 'join_table' => 'transportation', 'condition' => 'transportation.id = transportation_costs.transport_id'],];
+            $airport_transportation = $this->common_model->get_data('transportation_costs','', '', '*',$where, '', $count = false,$join);
+
+            foreach($airport_transportation AS $list){
+                if($list->type == 'airport-transfer-in'){
+                    $key = array_search($list->id, $this->input->get('chk_vehicle[]'));
+                    $data['airport_transfer_in'][] = ['vehicle_name'=>$list->vehicle_name,'price'=>$list->price,'currency'=>$list->currency,
+                                                                        'quantity'=>$this->input->get('vehicle_quantity')[$key]];
+                }elseif($list->type == 'airport-transfer-out'){
+                    $key = array_search($list->id, $this->input->get('chk_vehicle[]'));
+                    $data['airport_transfer_out'][] = ['vehicle_name'=>$list->vehicle_name,'price'=>$list->price,'currency'=>$list->currency,
+                                                                        'quantity'=>$this->input->get('vehicle_quantity')[$key]];
+                }
+            }
+        }
+        $data['transportation'] = [];
+        if($this->input->get('chk_vehicle')<>''){
+            $transport_id = implode(',',$this->input->get('chk_vehicle'));
+            $where = ' transportation.id IN ('.$transport_id.') AND transportation.status = "active"';
+            $data['transportation'] = $this->common_model->get_data('transportation','', '', '*',$where, '', $count = false);
+        }
+		
+        if($this->input->get('file_status') == 'view'){
+            $start_date = new DateTime($this->input->get('checkin_date'));
+            $last_date = new DateTime($this->input->get('checkout_date'));
+        }else{
+            $start_date = new DateTime($enquiry->check_in_date);
+            $last_date = new DateTime($enquiry->check_out_date);
+        }
+        $diff = $last_date->diff($start_date);
+        $data['duration'] = $diff->days;
+        
+     
+        $arrival_time = ($this->input->get('hdn_arrival_time')<>'')?$this->input->get('hdn_arrival_time'):'08:00';
+        $departure_time = ($this->input->get('hdn_departure_time')<>'')?$this->input->get('hdn_departure_time'):'20:00';
+		
+        for($i=0;$i<=$diff->days;$i++){
+            $date = date('Y-m-d', strtotime($enquiry->check_in_date)+($i*24*60*60));
+            if($i==0){
+                if($this->input->get('airport_pick_drop') == 'no'){
+                    $template[0]->content = explode('After',$template[0]->content)[0];
+                }
+                $data['template_content'][] = (object)['id'=>$i,'date'=>$date,'time'=>$arrival_time,'content'=>$template[0]->content,'remarks'=>''];
+            }else if($i==$diff->days){
+                if($this->input->get('airport_pick_drop') == 'no'){
+                    $template[2]->content = explode('Our',$template[2]->content)[0];
+                }
+                $data['template_content'][] = (object)['id'=>$i,'date'=>$date,'time'=>$departure_time,'content'=>$template[2]->content,'remarks'=>''];
+            }else{
+                $data['template_content'][] = (object)['id'=>$i,'date'=>$date,'time'=>'07:00','content'=>'','remarks'=>''];
+            }
+           // echo '<pre>';print_R($data);exit;
+        }
+	    // echo '<pre>';print_R($data);exit;
+		if($this->input->get('file_status') == 'view'){
+            $data['content'] = 'admin/quotation_create_view';
+        }else{
+            $data['content'] = 'admin/quotation_create';
+        }
+        $data['category_wise_nights'] = $category_wise_nights;
+        $this->load->view('admin/layout',$data);
+    }    
+    
+    public function get_hotel_prices()
+    {
+        $hotel_id = $this->input->post('hotel_id');
+        $check_in = $this->input->post('check_in');
+        $check_out = $this->input->post('check_out');
+        $type = $this->input->post('type');
+        $night_number = $this->input->post('night_number');
+
+        try {
+            $hotel = $this->db->select('booting_resort, category, per_person_cost, tourist_tax_cost, name as hotel_name, weekend_weekday')
+                            ->where('id', $hotel_id)
+                            ->get('hotels')
+                            ->row();
+
+            if (!$hotel) {
+                echo json_encode([
+                    'response' => 'e', 
+                    'msg' => 'Hotel not found',
+                    'has_pricing_for_date' => false
+                ]);
+                exit;
+            }
+
+            // Get day of week as number (1=Monday ... 7=Sunday)
+            $day_of_week = date('N', strtotime($check_in));
+
+            // Default weekend days (Friday = 5, Saturday = 6)
+            $weekend_days = [5, 6];
+
+            // Mapping from day names to numbers
+            $day_map = [
+                'monday'    => 1,
+                'tuesday'   => 2,
+                'wednesday' => 3,
+                'thursday'  => 4,
+                'friday'    => 5,
+                'saturday'  => 6,
+                'sunday'    => 7
+            ];
+            $weekend_query = $this->db->select('weekends')
+                                    ->where('hotel_id', $hotel_id)
+                                    ->get('hotel_weekend');
+
+            if ($weekend_query && $weekend_query->num_rows() > 0) {
+                $weekend_mapping = $weekend_query->row();
+                if (!empty($weekend_mapping->weekends)) {
+                    $custom_day_names = array_map('trim', explode(',', $weekend_mapping->weekends));
+                    $custom_days = [];
+                    foreach ($custom_day_names as $name) {
+                        $name_lower = strtolower($name);
+                        if (isset($day_map[$name_lower])) {
+                            $custom_days[] = $day_map[$name_lower];
+                        }
+                    }
+                    if (!empty($custom_days)) {
+                        $weekend_days = $custom_days;
+                    }
+                }
+            }
+            $is_weekend = in_array($day_of_week, $weekend_days) ? 1 : 0;
+
+            $category_param = $type;
+            if (!empty($hotel) && strtolower($hotel->booting_resort) == 'yes') {
+                $category_param = '4 Star';
+            }
+
+            if (!empty($hotel) && strtolower($hotel->weekend_weekday) == 'no') 
+            {
+                $specific_date_qry = "SELECT 
+                        hotels.name,
+                        hotels.location,
+                        hotel_room_categories.id,
+                        hotel_room_categories.category_name, 
+                        GROUP_CONCAT(
+                            CONCAT(
+                                room_category_costing.person_count,
+                                '(', 
+                                IF(room_category_costing.type='adult', 'A','C'), 
+                                ') ',
+                                room_category_costing.price_with_breakfast,
+                                IF(room_category_costing.child_bed IS NOT NULL AND room_category_costing.child_bed != '', 
+                                CONCAT(' ', room_category_costing.child_bed), '')
+                            ) ORDER BY room_category_costing.type, room_category_costing.person_count SEPARATOR ','
+                        ) AS details,
+                        MAX(room_category_costing.child_type1) as child_type1,
+                        MAX(room_category_costing.child1_age_from) as child1_age_from,
+                        MAX(room_category_costing.child1_age_to) as child1_age_to,
+                        MAX(room_category_costing.chid1_price) as chid1_price,
+                        MAX(room_category_costing.child_type2) as child_type2,
+                        MAX(room_category_costing.child2_age_from) as child2_age_from,
+                        MAX(room_category_costing.child2_age_to) as child2_age_to,
+                        MAX(room_category_costing.chid2_price) as chid2_price,
+                        MAX(room_category_costing.child_type3) as child_type3,
+                        MAX(room_category_costing.child3_age_from) as child3_age_from,
+                        MAX(room_category_costing.child3_age_to) as child3_age_to,
+                        MAX(room_category_costing.chid3_price) as chid3_price,
+                        MAX(room_category_costing.child_type4) as child_type4,
+                        MAX(room_category_costing.child4_age_from) as child4_age_from,
+                        MAX(room_category_costing.child4_age_to) as child4_age_to,
+                        MAX(room_category_costing.chid4_price) as chid4_price,
+                        MAX(room_category_costing.freebreakfast) as freebreakfast 
+                    FROM hotel_room_categories 
+                    JOIN room_category_costing ON (
+                        room_category_costing.category_id = hotel_room_categories.id 
+                        AND room_category_costing.status = 'active'
+                    ) 
+                    JOIN hotels ON hotels.id = hotel_room_categories.hotel_id 
+                    WHERE hotel_room_categories.hotel_id = ? 
+                        AND hotel_room_categories.status = 'active'
+                        AND room_category_costing.status = 'active'
+                        AND room_category_costing.type = 'adult'
+                        AND room_category_costing.price_with_breakfast > 0
+                        AND hotels.category = ?
+                        AND DATE(room_category_costing.from_date) <= DATE(?)
+                        AND DATE(room_category_costing.to_date) >= DATE(?)
+                    GROUP BY hotel_room_categories.id, hotels.name, hotels.location, hotel_room_categories.category_name";
+
+                $params = [$hotel_id, $category_param, $check_in, $check_in];
+            } else {
+                $specific_date_qry = "SELECT 
+                    hotels.name,
+                    hotels.location,
+                    hotel_room_categories.id,
+                    hotel_room_categories.category_name, 
+                    GROUP_CONCAT(
+                        CONCAT(
+                            room_category_costing.person_count,
+                            '(', 
+                            IF(room_category_costing.type='adult', 'A','C'), 
+                            ') ',
+                            CASE WHEN ? THEN room_category_costing.weekend_adult_price 
+                                 ELSE room_category_costing.weekDays_adult_price END,
+                            IF(room_category_costing.child_bed IS NOT NULL AND room_category_costing.child_bed != '', 
+                            CONCAT(' ', room_category_costing.child_bed), '')
+                        ) ORDER BY room_category_costing.type, room_category_costing.person_count SEPARATOR ','
+                    ) AS details,
+                    MAX(room_category_costing.weekend_adult_price) as weekend_adult_price,
+                    MAX(room_category_costing.weekDays_adult_price) as weekDays_adult_price,
+                    MAX(room_category_costing.child1_age_from) as child1_age_from,
+                    MAX(room_category_costing.child1_age_to) as child1_age_to,
+                    MAX(room_category_costing.child2_age_from) as child2_age_from,
+                    MAX(room_category_costing.child2_age_to) as child2_age_to,
+                    MAX(room_category_costing.child3_age_from) as child3_age_from,
+                    MAX(room_category_costing.child3_age_to) as child3_age_to,
+                    MAX(room_category_costing.child4_age_from) as child4_age_from,
+                    MAX(room_category_costing.child4_age_to) as child4_age_to,
+                    MAX(room_category_costing.child_type1) as child_type1,
+                    MAX(room_category_costing.child_type2) as child_type2,
+                    MAX(room_category_costing.child_type3) as child_type3,
+                    MAX(room_category_costing.child_type4) as child_type4,
+                    MAX(CASE WHEN ? THEN room_category_costing.child_weekend_price_1 
+                             ELSE room_category_costing.child_weekdays_price_1 END) as chid1_price,
+                    MAX(CASE WHEN ? THEN room_category_costing.child_weekend_price_2 
+                             ELSE room_category_costing.child_weekdays_price_2 END) as chid2_price,
+                    MAX(CASE WHEN ? THEN room_category_costing.child_weekend_price_3 
+                             ELSE room_category_costing.child_weekdays_price_3 END) as chid3_price,
+                    MAX(CASE WHEN ? THEN room_category_costing.child_weekend_price_4 
+                             ELSE room_category_costing.child_weekdays_price_4 END) as chid4_price,
+                    MAX(room_category_costing.freebreakfast) as freebreakfast 
+                FROM hotel_room_categories 
+                JOIN room_category_costing ON (
+                    room_category_costing.category_id = hotel_room_categories.id 
+                    AND room_category_costing.status = 'active'
+                ) 
+                JOIN hotels ON hotels.id = hotel_room_categories.hotel_id 
+                WHERE hotel_room_categories.hotel_id = ? 
+                    AND hotel_room_categories.status = 'active'
+                    AND room_category_costing.status = 'active'
+                    AND room_category_costing.type = 'adult'
+
+                    AND (
+                        IF(? = 1,
+                            COALESCE(room_category_costing.weekend_adult_price,0),
+                            COALESCE(room_category_costing.weekDays_adult_price,0)
+                        )
+                    ) > 0
+
+                    AND hotels.category = ?
+                    AND DATE(room_category_costing.from_date) <= DATE(?)
+                    AND DATE(room_category_costing.to_date) >= DATE(?)
+                GROUP BY hotel_room_categories.id, hotels.name, hotels.location, hotel_room_categories.category_name";
+
+                $params = array_merge(
+                    [$is_weekend, $is_weekend, $is_weekend, $is_weekend, $is_weekend],
+                    [$hotel_id, $is_weekend, $category_param, $check_in, $check_in]
+                );
+            }
+
+            $result = $this->db->query($specific_date_qry, $params);
+            // echo $this->db->last_query(); die;
+            if (!$result) {
+                $db_error = $this->db->error();
+                log_message('error', 'get_hotel_prices query failed: ' . $db_error['message'] . ' | Query: ' . $specific_date_qry);
+                echo json_encode([
+                    'response' => 'e',
+                    'msg' => 'Database error: ' . $db_error['message'],
+                    'has_pricing_for_date' => false
+                ]);
+                exit;
+            }
+            
+            if ($hotel->per_person_cost == 'yes' && !empty($hotel->tourist_tax_cost)) {
+                $per_person_cost = $hotel->per_person_cost ?? 'no';
+                $tourist_tax_cost = $hotel->tourist_tax_cost ?? '0';
+            }else{
+                $per_person_cost = 'no';
+                $tourist_tax_cost = '0';
+            }
+
+            $data['result'] = $result->result_array();
+            $has_pricing_for_date = ($result->num_rows() > 0);
+            
+            //  $this->db->close();
+
+            $response = [
+                'response' => 's', 
+                'details' => $data, 
+                'msg' => 'Success', 
+                'night_number' => $night_number,
+                'check_in_date' => $check_in,
+                'check_out_date' => $check_out,
+                'has_pricing_for_date' => $has_pricing_for_date,
+                'hotel_info' => [
+                    'id' => $hotel_id,
+                    'name' => $hotel->hotel_name, 
+                    'category' => $hotel->category,
+                    'per_person_cost' => $per_person_cost ?? 'no',
+                    'tourist_tax_cost' => $tourist_tax_cost ?? '0'
+                ]
+            ];
+
+            echo json_encode($response);
+
+        } catch (Exception $e) {
+            echo json_encode([
+                'response' => 'e', 
+                'msg' => 'Exception: ' . $e->getMessage(),
+                'has_pricing_for_date' => false
+            ]);
+        }
+        exit;
+    }
+    
+    public function get_family_hotel_prices()
+    {
+        $hotel_id = $this->input->post('hotel_id');
+        $check_in = $this->input->post('check_in');
+        $check_out = $this->input->post('check_out');
+        $type = $this->input->post('type');
+
+        // Enable DB debug to see errors
+        $this->db->db_debug = TRUE;
+
+        try {
+            // First, check if all required tables exist
+            $tables_to_check = ['hotels', 'hotel_room_categories', 'room_category_costing'];
+            $missing_tables = [];
+            
+            foreach ($tables_to_check as $table) {
+                $check = $this->db->query("SHOW TABLES LIKE '$table'");
+                if ($check->num_rows() == 0) {
+                    $missing_tables[] = $table;
+                }
+            }
+            
+            if (!empty($missing_tables)) {
+                echo json_encode(['response' => 'e', 'msg' => 'Missing tables: ' . implode(', ', $missing_tables)]);
+                exit;
+            }
+
+            // Check if hotel exists
+            $hotel = $this->db->select('booting_resort')
+                            ->where('id', $hotel_id)
+                            ->get('hotels')
+                            ->row();
+
+            if (!$hotel) {
+                echo json_encode(['response' => 'e', 'msg' => 'Hotel not found']);
+                exit;
+            }
+
+            // Use parameter binding to prevent SQL injection
+            $where = "hotel_room_categories.hotel_id = ? 
+                    AND hotel_room_categories.status = 'active'
+                    AND room_category_costing.type = 'adult' 
+                    AND room_category_costing.status = 'active'
+                    AND date(room_category_costing.from_date) <= ? 
+                    AND date(room_category_costing.to_date) >= ?";
+
+            $params = [$hotel_id, $check_in, $check_out];
+
+            if (!empty($hotel) && strtolower($hotel->booting_resort) == 'yes') {
+                $where .= " AND hotels.category IN ('4 Star')";
+            } else {
+                $where .= " AND hotels.category IN (?)";
+                $params[] = $type;
+            }
+
+            // Final query with proper field selection
+            $qry = "SELECT 
+                        hotels.name, 
+                        hotels.location, 
+                        hotel_room_categories.id, 
+                        hotel_room_categories.category_name,
+                        room_category_costing.person_count,
+                        room_category_costing.price_with_breakfast,
+                        room_category_costing.child_bed,
+                        room_category_costing.child_type1,
+                        room_category_costing.child1_age_from,
+                        room_category_costing.child1_age_to,
+                        room_category_costing.chid1_price,
+                        room_category_costing.child_type2,
+                        room_category_costing.child2_age_from,
+                        room_category_costing.child2_age_to,
+                        room_category_costing.chid2_price,
+                        room_category_costing.child_type3,
+                        room_category_costing.child3_age_from,
+                        room_category_costing.child3_age_to,
+                        room_category_costing.chid3_price,
+                        room_category_costing.child_type4,
+                        room_category_costing.child4_age_from,
+                        room_category_costing.child4_age_to,
+                        room_category_costing.chid4_price,
+                        room_category_costing.freebreakfast  -- FIXED: Added missing comma
+                    FROM hotel_room_categories 
+                    JOIN room_category_costing ON (
+                        room_category_costing.category_id = hotel_room_categories.id 
+                        AND room_category_costing.status = 'active'
+                    ) 
+                    JOIN hotels ON hotels.id = hotel_room_categories.hotel_id 
+                    WHERE $where 
+                    ORDER BY hotel_room_categories.id, room_category_costing.person_count";
+
+            $result = $this->db->query($qry, $params);
+            
+            if (!$result) {
+                $error = $this->db->error();
+                echo json_encode(['response' => 'e', 'msg' => 'Final query failed: ' . $error['message']]);
+                exit;
+            }
+
+            $data['result'] = $result->result();
+            
+            echo json_encode(['response' => 's', 'details' => $data, 'msg' => 'Success']);
+            
+        } catch (Exception $e) {
+            echo json_encode(['response' => 'e', 'msg' => 'Exception: ' . $e->getMessage()]);
+        }
+        
+        exit;
+    }
+    
+    public function get_cities(){
+        $char = substr($this->input->post('enq_no'),1,2);
+        $search = trim($this->input->post('search'));
+        $locations = COUNTRY_ABBR;//['A' => 'azerbaijan', 'B' => 'belarus', 'G' => 'georgia', 'K' => 'kazakhstan'];
+        $select = 'DISTINCT(cities.name) as name';
+        $where = 'LOWER(countries.name) = "'.$locations[$char].'" AND cities.name LIKE "%'.$search.'%"';
+        $join = [['type' => '', 'join_table' => 'states', 'condition' => 'cities.state_id = states.id'],
+                ['type' => '', 'join_table' => 'countries', 'condition' => 'countries.id = states.country_id'],];
+        $data = $this->common_model->get_data('cities','', '', $select,$where, ' LIMIT 10', $count = false,$join);
+        //echo '<pre>';print_r((array)$data);exit;
+        foreach ($data as $row) {
+            $response[] = array("label" => trim($row->name),'suburb_flag'=>false);
+        }
+        if(empty($response)){
+            $select = 'suburbs.name';
+            $where = 'LOWER(countries.name) = "'.$locations[$char].'" AND suburbs.name LIKE "%'.$search.'%"';
+            $join = [['type' => '', 'join_table' => 'suburbs', 'condition' => 'suburbs.city_id = cities.id'],
+                    ['type' => '', 'join_table' => 'states', 'condition' => 'cities.state_id = states.id'],
+                    ['type' => '', 'join_table' => 'countries', 'condition' => 'countries.id = states.country_id'],];
+            $data = $this->common_model->get_data('cities','', '', $select,$where, ' LIMIT 10', $count = false,$join);
+            //echo '<pre>';print_r((array)$data);exit;
+            foreach ($data as $row) {
+                $response[] = array("label" => trim($row->name),'suburb_flag'=>true);
+            }
+        }
+        echo json_encode($response);
+        exit;
+    }
+    
+    public function get_hotel_citywise()
+    {
+        $city               = $this->input->post('city');
+        $search             = trim($this->input->post('search'));
+        $selected_hotel_ids = $this->input->post('hotel_ids');
+        $type               = $this->input->post('type');
+        $check_in           = $this->input->post('check_in');
+        $check_out          = $this->input->post('check_out');
+
+        $select = 'hotels.id, hotels.name';
+
+        // Filter out already selected hotel IDs first
+        $filteredArray = array_filter($selected_hotel_ids, function($value) {
+            return !empty($value) && trim($value) !== '';
+        });
+
+        // Special case for Kolsai
+        if (strtolower($city) == 'kolsai') {
+            $where = 'LOWER(hotels.city) = "satte" AND hotels.booting_resort = "yes" AND hotels.status = "active" AND hotels.name LIKE "%'.$search.'%"';
+            // Exclude already selected booting_resort hotels
+            if (!empty($filteredArray)) {
+                $where .= ' AND hotels.id NOT IN ('.implode(',', $filteredArray).')';
+            }
+        } else {
+            $where = 'LOWER(hotels.city) = "'.strtolower($city).'" 
+                    AND hotels.name LIKE "%'.$search.'%" 
+                    AND hotels.status = "active" 
+                    AND ( hotels.category IN ("'.$type.'") OR hotels.booting_resort = "yes")';
+
+            // Exclude already displayed hotels
+            if (!empty($filteredArray)) {
+                $where .= ' AND hotels.id NOT IN ('.implode(',', $filteredArray).')';
+            }
+        }
+
+        // Get hotel data
+        $data = $this->common_model->get_data('hotels', '', '', $select, $where, ' LIMIT 10', false);
+        $response = [];
+
+        foreach ($data as $row) {
+            $hotel_id = $row->id;
+            $qry  = 'SELECT COUNT(*) as cnt FROM hotel_room_categories ';
+            $qry .= 'JOIN room_category_costing ON (room_category_costing.category_id = hotel_room_categories.id AND room_category_costing.status="active") ';
+            $qry .= 'WHERE hotel_room_categories.hotel_id = '.$hotel_id.' ';
+            $qry .= 'AND hotel_room_categories.status="active" ';
+            // $qry .= 'AND date(room_category_costing.from_date) <= "'.$check_in.'" ';
+            // $qry .= 'AND date(room_category_costing.to_date) >= "'.$check_out.'" ';
+            $qry .= 'AND date(room_category_costing.from_date) <= "'.$check_out.'" ';
+            $qry .= 'AND date(room_category_costing.to_date) >= "'.$check_in.'" ';
+            $result = $this->db->query($qry)->row();
+
+            if ($result->cnt > 0) {
+                $response[] = [
+                    "label"    => trim($row->name),
+                    "hotel_id" => $hotel_id
+                ];
+            }
+        }
+
+        // Add "Proceed Without Hotel" option
+        $response[] = [
+            "label"    => "<span style='color:red;'>Proceed with same hotel</span>",
+            "hotel_id" => "0"
+        ];
+
+        echo json_encode($response);
+        exit;
+    }
+    
+    public function get_restaurants_citywise(){
+        //echo '<pre>';print_R($this->input->post());exit;
+        $city = $this->input->post('city');
+        $search = trim($this->input->post('search'));
+        $select = 'restaurants.name,restaurants.id';
+        $where = 'LOWER(restaurants.city) = "'.strtolower($city).'" AND restaurants.name LIKE "%'.$search.'%"';        
+        $where .= ' AND restaurants.status = "active"';
+        $data = $this->common_model->get_data('restaurants','', '', $select,$where, ' LIMIT 10', $count = false);
+        $response = [];
+        foreach ($data as $row) {
+            $response[] = array("label" => trim($row->name),'restaurants_id'=>$row->id);
+        }
+        echo json_encode($response);
+        exit;
+    }
+    
+    public function get_sites()
+    {
+        $char = substr($this->input->post('enq_no'),1,2);
+        $search = trim($this->input->post('search'));
+        $city = strtolower($this->input->post('city'));
+        $prev_city = strtolower($this->input->post('prev_city'));
+        $route_cities = $this->input->post('route_cities');
+        
+        $country = COUNTRY_ABBR; // ['A' => 'azerbaijan', ...]
+        
+        $select = 'sites.id, sites.site_name AS label, sites.days_of_operation, sites.entry_ticket, sites.entry_ticket_fee, sites.child_entry_ticket_fee, sites.group_entry_ticket_fee';
+        
+        // Normalise city names if needed
+        if ($city == 'kolsai') $city = 'almaty';
+        if ($prev_city == 'kolsai') $prev_city = 'almaty';
+        
+        // Build city condition
+        $city_conditions = [];
+        
+        // 1. If route_cities are provided, use them
+        if (!empty($route_cities)) {
+            $route_city_array = explode(',', $route_cities);
+            foreach ($route_city_array as $rc) {
+                $rc = trim(strtolower($rc));
+                if (!empty($rc)) {
+                    $city_conditions[] = "FIND_IN_SET(LOWER('".$this->db->escape_str($rc)."'), LOWER(sites.city))";
+                }
+            }
+        }
+        
+        // 2. If no route_cities, fall back to original logic
+        if (empty($city_conditions)) {
+            if (!empty($prev_city) && $city != $prev_city) {
+                $city_conditions[] = "FIND_IN_SET(LOWER('".$this->db->escape_str($city)."'), LOWER(sites.city))";
+                $city_conditions[] = "FIND_IN_SET(LOWER('".$this->db->escape_str($prev_city)."'), LOWER(sites.city))";
+            } else {
+                $city_conditions[] = "FIND_IN_SET(LOWER('".$this->db->escape_str($city)."'), LOWER(sites.city))";
+            }
+        }
+        
+        // Combine conditions with OR
+        $city_condition_str = implode(' OR ', $city_conditions);
+        
+        $where = 'sites.status = "active" 
+                AND LOWER(sites.country) = "'.$country[$char].'" 
+                AND sites.site_name LIKE "%'.$this->db->escape_str($search).'%"
+                AND ('.$city_condition_str.' OR sites.category = "miscellaneous") 
+                LIMIT 15';
+        
+        $sites = $this->common_model->get_data('sites', '', '', $select, $where, '', false);
+        echo json_encode($sites);
+        exit;
+    }
+    
+    public function get_activities(){
+        $site_id = $this->input->post('site_id');
+        $select = 'site_activities_costs.*';
+        $where = 'site_activities_costs.sites_id = '.$site_id;
+    	$site_activities = $this->common_model->get_data('site_activities_costs','', '', $select,$where,'', $count = false);
+        echo json_encode(['response' => 's', 'details' => $site_activities, 'msg' => '']);
+        exit;
+    }
+    
+    public function get_restaurants_prices(){
+        //echo '<pre>';print_R($this->input->post());exit;
+        $restaurant_id = $this->input->post('restaurant_id');
+        $meals = trim($this->input->post('meals'));
+        $meals_type = trim($this->input->post('meals_type'));
+        $select = 'restaurant_cuisine_prices.*';
+        $where = 'LOWER(restaurant_cuisine_prices.type) = "'.strtolower($meals_type).'" AND LOWER(restaurant_cuisine_prices.buffet_name) = "'.strtolower($meals).'"';        
+        $where .= ' AND restaurant_cuisine_prices.status = "active" AND restaurant_cuisine_prices.restaurant_id = '.$restaurant_id;
+        $data = $this->common_model->get_data('restaurant_cuisine_prices','', '', $select,$where, '', $count = false);
+        //echo $this->db->last_query();exit;
+        if(!empty($data)){
+            $data = $data[0];
+        }
+        echo json_encode(['response' => 's', 'details' => $data, 'msg' => '']);
+        exit;
+    }
+    
+    public function get_guides()
+    {
+        $city = $this->input->post('city');
+        $search = trim($this->input->post('search'));
+        $select = 'guides.name,guides.last_name,guides.id';
+        $where = 'LOWER(guides.city) = "'.strtolower($city).'" AND guides.status = "active"';        
+        $where .= ' AND (guides.name LIKE "%'.$search.'%" OR guides.last_name LIKE "%'.$search.'%")';
+        $data = $this->common_model->get_data('guides','', '', $select,$where, ' LIMIT 10', $count = false);
+        $response = [];
+        foreach ($data as $row) {
+            $response[] = array("label" => trim($row->name).' '.trim($row->last_name),'guide_id'=>$row->id);
+        }
+        echo json_encode($response);
+        exit;
+    }
+    
+    public function get_mandatory_services(){
+        $char = substr($this->input->post('location'), 1, 2);
+        $locations = COUNTRY_ABBR;//['A' => 'azerbaijan', 'B' => 'belarus', 'G' => 'georgia', 'K' => 'kazakhstan'];
+        $response = array();
+        $this->db->select('*');
+        $this->db->where("auxiliary_miscellaneous.title like '%" . trim($this->input->post('search')) . "%' ");
+        $this->db->where('status', 'active');
+        $this->db->where('LOWER(auxiliary_miscellaneous.country)', $locations[$char]);
+        $this->db->limit(10);
+        $records = $this->db->get('auxiliary_miscellaneous')->result();
+        foreach ($records as $row) {
+            // $response[] = array("t_id" => $row->id, "label" => trim($row->title),'price'=>$row->adult_price);
+             $response[] = array(
+                "t_id" => $row->id,
+                "label" => trim($row->title),
+                "price" => $row->adult_price,
+                "quantity" => $row->quantity,
+                "cost_by" => $row->cost_by, 
+                "group_type" => $row->group_type
+            );
+        }
+        echo json_encode($response);
+    }
+    
+public function save_quotation()
+{
+    // echo '<pre>';
+    // print_r($_POST);
+    // die;
+
+
+    // =========================================================
+    // DEFAULT RESPONSE
+    // =========================================================
+
+    $response = [
+        'response' => 'e',
+        'details'  => '',
+        'msg'      => '<div class="alert alert-danger">
+                            Quotation Not Saved. Try Again!
+                       </div>'
+    ];
+
+
+    // =========================================================
+    // MANDATORY SERVICES
+    // =========================================================
+
+    $names = $this->input->post('mandatory_services_name');
+    $costs = $this->input->post('mandatory_services_cost');
+    $qtys  = $this->input->post('mandatory_services_qnty');
+
+    $mandatory_services = [];
+
+    if (is_array($names)) {
+
+        foreach ($names as $key => $name) {
+
+            $mandatory_services[] = [
+                'service' => $name . "_|_" . ($costs[$key] ?? ''),
+                'qnty'    => $qtys[$key] ?? ''
+            ];
+        }
+    }
+
+
+    // =========================================================
+    // CHILD MANDATORY SERVICES
+    // =========================================================
+
+    $child_mandatory_services = [];
+
+    $child_names = $this->input->post('child_mandatory_services_name');
+    $child_costs = $this->input->post('child_mandatory_services_cost');
+    $child_qtys  = $this->input->post('child_mandatory_services_qnty');
+
+    if (is_array($child_names)) {
+
+        foreach ($child_names as $key => $name) {
+
+            $child_mandatory_services[] = [
+                'service' => $name . "_|_" . ($child_costs[$key] ?? ''),
+                'qnty'    => $child_qtys[$key] ?? ''
+            ];
+        }
+    }
+
+
+    // =========================================================
+    // OTHER POST DATA
+    // =========================================================
+
+    $final_transport =
+        $this->input->post('final_transport');
+
+    $final_transport_without_toll =
+        $this->input->post('final_transport_without_toll');
+
+    $guide_arr =
+        $this->input->post('guide_arr');
+
+    if (!empty($guide_arr)) {
+
+        $guide_arr =
+            json_decode($guide_arr, true);
+
+    } else {
+
+        $guide_arr = [];
+    }
+
+
+    $airport_pic_drop =
+        $this->input->post('airport_pic_drop');
+
+    $luggage_vehicle_cost =
+        $this->input->post('luggage_vehicle_cost');
+
+    $full_day_cost =
+        $this->input->post('full_day_cost');
+
+    $overnight_cost =
+        $this->input->post('overnight_cost');
+
+    $outside_cost =
+        $this->input->post('outside_cost');
+
+    $final_toll_price =
+        $this->input->post('final_toll_price');
+
+    $discount_bundle_price =
+        $this->input->post('discount_bundle_price');
+
+    $meal_type_price_data =
+        $this->input->post('meal_type_daywise_price');
+
+    $entertainment_daywise_data =
+        $this->input->post('entertainment_daywise_data');
+
+    $fremark =
+        $this->input->post('fremark');
+
+    $sitescene_cost =
+        $this->input->post('sitescene_cost');
+
+    $activity_cost =
+        $this->input->post('activity_cost');
+
+    $hotel_cost =
+        $this->input->post('hotel_cost');
+
+    $daywise_road =
+        $this->input->post('daywise_road_data');
+
+    $daywise_train =
+        $this->input->post('daywise_train_data');
+
+    $daywise_train_transport_data =
+        $this->input->post('daywise_train_transport_data');
+
+    $update_margin =
+        $this->input->post('update_margin');
+
+
+    // =========================================================
+    // REDUCED MARGINS
+    // =========================================================
+
+    $reduced_margins = json_decode(
+        $this->input->post('reduced_margins'),
+        true
+    ) ?? [];
+
+
+    $reduced_land_margins = json_decode(
+        $this->input->post('reduced_land_margins'),
+        true
+    ) ?? [];
+
+
+    // =========================================================
+    // OTHER JSON DATA
+    // =========================================================
+
+    $entrance_data_json =
+        $this->input->post('entrance_data_json');
+
+    $driver_data_json =
+        $this->input->post('driver_data_json');
+
+    $dinner_transfer_data_json =
+        $this->input->post('dinner_transfer_data_json');
+
+
+    // =========================================================
+    // CHECK REQUIRED DATA
+    // =========================================================
+
+    if (
+        $this->input->post('quotation_arr') &&
+        $this->input->post('hotel_arr')
+    ) {
+
+
+        // =====================================================
+        // QUOTATION DATA
+        // =====================================================
+
+        $quotation_arr = json_decode(
+            $this->input->post('quotation_arr'),
+            true
+        );
+
+
+        if ($quotation_arr) {
+
+
+            // =================================================
+            // SELECTED NIGHTS
+            // =================================================
+
+            $selected_nights =
+                $quotation_arr['selected_nights'] ?? [];
+
+
+            if (!is_array($selected_nights)) {
+
+                $selected_nights = [];
+            }
+
+
+            // =================================================
+            // ADD QUOTATION DATA
+            // =================================================
+
+            $quotation_arr += [
+
+                'land_markup' =>
+                    $this->input->post('markup_percentage'),
+
+                'hotel_markup_percentage' =>
+                    $this->input->post('hotel_markup_percentage'),
+
+
+                'mandatory_services' =>
+                    json_encode(
+                        $mandatory_services,
+                        JSON_UNESCAPED_UNICODE
+                    ),
+
+
+                'child_mandatory_services' =>
+                    json_encode(
+                        $child_mandatory_services,
+                        JSON_UNESCAPED_UNICODE
+                    ),
+
+
+                'total_transport' =>
+                    $final_transport,
+
+
+                'total_transport_without_tol' =>
+                    $final_transport_without_toll,
+
+
+                'airport_pic_drop_cost' =>
+                    $airport_pic_drop,
+
+
+                'luggage_vehicle_cost' =>
+                    $luggage_vehicle_cost,
+
+
+                'full_day_cost' =>
+                    $full_day_cost,
+
+
+                'overnight_cost' =>
+                    $overnight_cost,
+
+
+                'outside_cost' =>
+                    $outside_cost,
+
+
+                'activity_cost' =>
+                    $activity_cost,
+
+
+                'entrance_cost' =>
+                    $entrance_data_json,
+
+
+                'ticket_cost' =>
+                    $sitescene_cost,
+
+
+                'hotel_cost' =>
+                    $hotel_cost,
+
+
+                'transport_toll' =>
+                    $final_toll_price,
+
+
+                'discount_bundle_price' =>
+                    $discount_bundle_price,
+
+
+                'guide_cost' =>
+                    json_encode(
+                        $guide_arr,
+                        JSON_UNESCAPED_UNICODE
+                    ),
+
+
+                'meal_type_daywise_price' =>
+                    $meal_type_price_data,
+
+
+                'daywise_entertainment' =>
+                    $entertainment_daywise_data,
+
+
+                'dinner_transfer_data' =>
+                    $dinner_transfer_data_json,
+
+
+                'daywise_road' =>
+                    $daywise_road,
+
+
+                'daywise_train' =>
+                    $daywise_train,
+
+
+                'daywise_train_transport' =>
+                    $daywise_train_transport_data,
+
+
+                'update_margin' =>
+                    $update_margin,
+
+
+                'reduced_margins' =>
+                    json_encode(
+                        $reduced_margins,
+                        JSON_UNESCAPED_UNICODE
+                    ),
+
+
+                'reduced_land_margins' =>
+                    json_encode(
+                        $reduced_land_margins,
+                        JSON_UNESCAPED_UNICODE
+                    ),
+
+
+                'driver_cost' =>
+                    $driver_data_json,
+
+
+                'remark' =>
+                    $fremark,
+
+
+                'created' =>
+                    date('Y-m-d H:i:s'),
+
+
+                'modified' =>
+                    date('Y-m-d H:i:s'),
+
+
+                'selected_nights' =>
+                    json_encode(
+                        $selected_nights,
+                        JSON_UNESCAPED_UNICODE
+                    )
+            ];
+
+
+        } else {
+
+            echo json_encode([
+
+                'response' => 'e',
+
+                'msg' =>
+                    '<div class="alert alert-danger">
+                        Invalid quotation data.
+                    </div>'
+            ]);
+
+            exit;
+        }
+
+
+        // =========================================================
+        // SAVE QUOTATION
+        // =========================================================
+
+        $id = $this->common_model->insert_data([
+
+            'table_name' =>
+                'quotations',
+
+            'insert_data' =>
+                $quotation_arr
+        ]);
+
+
+        // =========================================================
+        // QUOTATION SAVED
+        // =========================================================
+
+        if ($id) {
+
+
+            // =====================================================
+            // GET HOTEL ARRAY
+            // =====================================================
+
+            $hotel_arr = json_decode(
+
+                $this->input->post('hotel_arr'),
+
+                true
+            );
+
+
+            // =====================================================
+            // CHECK HOTEL ARRAY
+            // =====================================================
+
+            if (
+                !empty($hotel_arr) &&
+                is_array($hotel_arr)
+            ) {
+
+
+                // =================================================
+                // HOTEL ROOM MAP
+                // =================================================
+
+                $hotelRoomMap = [];
+
+
+                foreach ($hotel_arr as $arr) {
+
+                    if (
+                        !empty($arr['hotel_id']) &&
+                        !empty($arr['hotel_room_details']) &&
+                        $arr['hotel_room_details'] !== "[]"
+                    ) {
+
+                        $hotelRoomMap[
+                            $arr['hotel_id']
+                        ] =
+                            $arr['hotel_room_details'];
+                    }
+                }
+
+
+                // =================================================
+                // HOTEL DETAILS
+                // =================================================
+
+                $hotel_details = [];
+
+
+                // =================================================
+                // COUNT HOTEL ROWS PER CATEGORY
+                // =================================================
+
+                $categoryRowCount = [];
+
+
+                foreach ($hotel_arr as $arr) {
+
+                    $category =
+                        trim($arr['hotel_category'] ?? '');
+
+
+                    if ($category === '') {
+                        continue;
+                    }
+
+
+                    if (
+                        !isset(
+                            $categoryRowCount[$category]
+                        )
+                    ) {
+
+                        $categoryRowCount[$category] = 0;
+                    }
+
+
+                    $categoryRowCount[$category]++;
+                }
+
+
+                // =================================================
+                // PROCESS EACH HOTEL
+                // =================================================
+
+                foreach ($hotel_arr as $arr) {
+
+
+                    // =============================================
+                    // HOTEL BASIC DATA
+                    // =============================================
+
+                    $hotel_category =
+                        trim(
+                            $arr['hotel_category'] ?? ''
+                        );
+
+
+                    $hotel_id =
+                        $arr['hotel_id'] ?? '';
+
+
+                    $hotel_name =
+                        $arr['hotel_name'] ?? '';
+
+
+                    $current_night =
+                        isset($arr['night'])
+                            ? (int)$arr['night']
+                            : 0;
+
+
+                    // =============================================
+                    // VALIDATION
+                    // =============================================
+
+                    if (
+                        $hotel_category === '' ||
+                        $hotel_name === ''
+                    ) {
+                        continue;
+                    }
+
+
+                    // =============================================
+                    // GET SELECTED NIGHTS
+                    // FOR THIS HOTEL CATEGORY
+                    // =============================================
+
+                    $category_nights =
+                        $selected_nights[
+                            $hotel_category
+                        ] ?? [];
+
+
+                    if (!is_array($category_nights)) {
+
+                        $category_nights = [];
+                    }
+
+
+                    // =============================================
+                    // CLEAN NIGHTS
+                    // =============================================
+
+                    $category_nights =
+                        array_values(
+                            array_unique(
+                                array_map(
+                                    'intval',
+                                    $category_nights
+                                )
+                            )
+                        );
+
+
+                    sort($category_nights);
+
+
+                    // =============================================
+                    // DETERMINE NIGHTS TO SAVE
+                    // =============================================
+
+                    /*
+                     * CASE 1:
+                     *
+                     * Only ONE hotel row exists
+                     * for this category.
+                     *
+                     * Example:
+                     *
+                     * 5 Star
+                     * Hotel Intercontinental
+                     *
+                     * Selected:
+                     * [1,2,3,4]
+                     *
+                     * Same hotel will be saved
+                     * for all 4 nights.
+                     */
+
+                    if (
+                        count($category_nights) > 0 &&
+                        (
+                            $categoryRowCount[
+                                $hotel_category
+                            ] ?? 0
+                        ) === 1
+                    ) {
+
+                        $nights_to_save =
+                            $category_nights;
+                    }
+
+
+                    /*
+                     * CASE 2:
+                     *
+                     * Multiple hotel rows exist
+                     * for same category.
+                     *
+                     * Example:
+                     *
+                     * Night 1 = Hotel A
+                     * Night 2 = Hotel B
+                     * Night 3 = Hotel C
+                     *
+                     * Preserve individual nights.
+                     */
+
+                    else {
+
+                        if ($current_night > 0) {
+
+                            $nights_to_save = [
+                                $current_night
+                            ];
+
+                        } else {
+
+                            $nights_to_save = [];
+                        }
+                    }
+
+
+                    // =============================================
+                    // SAVE HOTEL FOR EACH NIGHT
+                    // =============================================
+
+                    foreach (
+                        $nights_to_save
+                        as $night
+                    ) {
+
+                        $night = (int)$night;
+
+
+                        if ($night <= 0) {
+                            continue;
+                        }
+
+
+                        // =========================================
+                        // HOTEL DETAIL
+                        // =========================================
+
+                        $hotel_detail = [
+
+                            'quotation_id' =>
+                                $id,
+
+                            'hotel_category' =>
+                                $hotel_category,
+
+                            'hotel_name' =>
+                                $hotel_name,
+
+                            'hotel_id' =>
+                                $hotel_id,
+
+                            'night' =>
+                                $night,
+
+                            'created' =>
+                                date('Y-m-d H:i:s')
+                        ];
+
+
+                        // =========================================
+                        // HOTEL ROOM DETAILS
+                        // =========================================
+
+                        if (
+                            isset(
+                                $arr[
+                                    'hotel_room_details'
+                                ]
+                            ) &&
+                            !empty(
+                                $arr[
+                                    'hotel_room_details'
+                                ]
+                            ) &&
+                            $arr[
+                                'hotel_room_details'
+                            ] !== "[]"
+                        ) {
+
+
+                            // =====================================
+                            // ROOM DETAILS IS ARRAY
+                            // =====================================
+
+                            if (
+                                is_array(
+                                    $arr[
+                                        'hotel_room_details'
+                                    ]
+                                )
+                            ) {
+
+                                $hotel_detail[
+                                    'hotel_room_details'
+                                ] =
+                                    json_encode(
+                                        $arr[
+                                            'hotel_room_details'
+                                        ],
+                                        JSON_UNESCAPED_UNICODE
+                                    );
+                            }
+
+
+                            // =====================================
+                            // ROOM DETAILS IS JSON STRING
+                            // =====================================
+
+                            else {
+
+                                $hotel_detail[
+                                    'hotel_room_details'
+                                ] =
+                                    $arr[
+                                        'hotel_room_details'
+                                    ];
+                            }
+                        }
+
+
+                        // =========================================
+                        // FALLBACK HOTEL ROOM MAP
+                        // =========================================
+
+                        elseif (
+                            !empty($hotel_id) &&
+                            isset(
+                                $hotelRoomMap[
+                                    $hotel_id
+                                ]
+                            )
+                        ) {
+
+
+                            if (
+                                is_array(
+                                    $hotelRoomMap[
+                                        $hotel_id
+                                    ]
+                                )
+                            ) {
+
+                                $hotel_detail[
+                                    'hotel_room_details'
+                                ] =
+                                    json_encode(
+                                        $hotelRoomMap[
+                                            $hotel_id
+                                        ],
+                                        JSON_UNESCAPED_UNICODE
+                                    );
+                            }
+
+                            else {
+
+                                $hotel_detail[
+                                    'hotel_room_details'
+                                ] =
+                                    $hotelRoomMap[
+                                        $hotel_id
+                                    ];
+                            }
+                        }
+
+
+                        // =========================================
+                        // NO ROOM DETAILS
+                        // =========================================
+
+                        else {
+
+                            $hotel_detail[
+                                'hotel_room_details'
+                            ] = null;
+                        }
+
+
+                        // =========================================
+                        // ADD HOTEL ROW
+                        // =========================================
+
+                        $hotel_details[] =
+                            $hotel_detail;
+                    }
+                }
+
+
+                // =================================================
+                // INSERT HOTEL DETAILS
+                // =================================================
+
+                if (!empty($hotel_details)) {
+
+                    $this->common_model->insert_data_batch([
+
+                        'table_name' =>
+                            'quotation_hotel_details',
+
+                        'insert_data' =>
+                            $hotel_details
+                    ]);
+                }
+            }
+
+
+            // =====================================================
+            // SUCCESS RESPONSE
+            // =====================================================
+
+            $response = [
+
+                'response' =>
+                    's',
+
+                'details' =>
+                    '',
+
+                'msg' =>
+                    '<div class="alert alert-success">
+                        Saved Successfully!
+                    </div>',
+
+                'quotation_id' =>
+                    $id
+            ];
+        }
+    }
+
+
+    // =========================================================
+    // FINAL RESPONSE
+    // =========================================================
+
+    echo json_encode($response);
+
+    exit;
+}
+    
+    // public function fetch_quotation(){
+    //     //echo '<pre>';print_r($this->input->post('id'));exit;
+    //     $response = ['response' => 'e', 'details' => '', 'msg' => '<div class="alert alert-danger">Invalid Id. Try Again!</div>'];
+        
+    //     if($this->input->post('id') <> '' && is_numeric($this->input->post('id'))){
+    //         $join = [['type' => 'LEFT', 'join_table' => 'quotation_hotel_details', 'condition' => 'quotations.id = quotation_hotel_details.quotation_id'],];
+    //         $where = ' quotations.id = '.$this->input->post('id');
+    //         $select = 'quotations.*,quotation_hotel_details.hotel_category,quotation_hotel_details.hotel_name,quotation_hotel_details.hotel_id,quotation_hotel_details.hotel_room_details,quotation_hotel_details.night';
+    //         $data['quotation'] = $this->common_model->get_data('quotations','', '', $select,$where,'', $count = false,$join);
+    //         //echo '<pre>';print_r($data['quotation']);exit;
+    //         $data['sites_table_data'] = $this->db->get('sites')->result_array();
+    //         $data['hotels'] = $this->db->where('quotation_id', $this->input->post('id'))->get('quotation_hotel_details')->result_array();
+    //         $data['saved_hotels'] = $this->db->where('quotation_id', $this->input->post('id'))->get('quotation_hotel_details')->result_array();
+            
+    //         $enquiry_id = $data['quotation'][0]->enquiry_id;
+    //         $row = $this->db->select('created')->where('enquiry_id', $enquiry_id)->order_by('created', 'DESC')->limit(1)->get('quotations')->row_array();
+    //         $data['last_quotation'] = !empty($row) ? $row['created'] : '';
+            
+    //         $response = ['response' => 's', 'details' => $data, 'msg' => '<div class="alert alert-success">Quotation Found Successfully!</div>'];
+    //     }
+    //     echo json_encode($response);
+    //     exit;
+    // }
+
+// public function fetch_quotation()
+// {
+//     $response = [
+//         'response' => 'e',
+//         'details' => '',
+//         'msg' => '<div class="alert alert-danger">Invalid Id. Try Again!</div>'
+//     ];
+
+//     if (
+//         $this->input->post('id') != '' &&
+//         is_numeric($this->input->post('id'))
+//     ) {
+
+//         $quotation_id = $this->input->post('id');
+
+
+//         /*
+//          * ==========================================
+//          * QUOTATION DATA
+//          * ==========================================
+//          */
+
+//         $join = [
+//             [
+//                 'type' => 'LEFT',
+//                 'join_table' => 'quotation_hotel_details',
+//                 'condition' => 'quotations.id = quotation_hotel_details.quotation_id'
+//             ]
+//         ];
+
+//         $where = 'quotations.id = ' . $quotation_id;
+
+//         $select = '
+//             quotations.*,
+//             quotation_hotel_details.hotel_category,
+//             quotation_hotel_details.hotel_name,
+//             quotation_hotel_details.hotel_id,
+//             quotation_hotel_details.hotel_room_details,
+//             quotation_hotel_details.night
+//         ';
+
+//         $data['quotation'] = $this->common_model->get_data(
+//             'quotations',
+//             '',
+//             '',
+//             $select,
+//             $where,
+//             '',
+//             false,
+//             $join
+//         );
+
+
+//         /*
+//          * ==========================================
+//          * SITES DATA
+//          * ==========================================
+//          */
+
+//         $data['sites_table_data'] = $this->db
+//             ->get('sites')
+//             ->result_array();
+
+
+//         /*
+//          * ==========================================
+//          * HOTEL DETAILS
+//          * ==========================================
+//          */
+
+//         $data['hotels'] = $this->db
+//             ->where('quotation_id', $quotation_id)
+//             ->get('quotation_hotel_details')
+//             ->result_array();
+
+
+       
+
+//             $selected_nights = [];
+
+
+//             // ==========================================
+//             // EXISTING LOGIC
+//             // quotations.selected_nights se data
+//             // ==========================================
+
+//             if (
+//                 !empty($data['quotation']) &&
+//                 isset($data['quotation'][0]->selected_nights) &&
+//                 !empty($data['quotation'][0]->selected_nights)
+//             ) {
+
+//                 $decoded_selected_nights = json_decode(
+//                     $data['quotation'][0]->selected_nights,
+//                     true
+//                 );
+
+//                 if (is_array($decoded_selected_nights)) {
+
+//                     foreach ($decoded_selected_nights as $category => $nights) {
+
+//                         if (!is_array($nights)) {
+//                             $nights = [];
+//                         }
+
+//                         $nights = array_values(
+//                             array_unique(
+//                                 array_map('intval', $nights)
+//                             )
+//                         );
+
+//                         sort($nights);
+
+//                         $selected_nights[trim($category)] = $nights;
+//                     }
+//                 }
+//             }
+
+
+//             // ==========================================
+//             // NEW FALLBACK ONLY
+//             // selected_nights NULL/EMPTY ho
+//             // ==========================================
+
+//             if (empty($selected_nights) && !empty($data['hotels'])) {
+
+//                 foreach ($data['hotels'] as $hotel) {
+
+//                     $category = trim($hotel['hotel_category']);
+//                     $night    = (int) $hotel['night'];
+
+//                     if ($category == '' || $night <= 0) {
+//                         continue;
+//                     }
+
+//                     if (!isset($selected_nights[$category])) {
+//                         $selected_nights[$category] = [];
+//                     }
+
+//                     if (!in_array($night, $selected_nights[$category])) {
+//                         $selected_nights[$category][] = $night;
+//                     }
+//                 }
+
+//                 foreach ($selected_nights as $category => $nights) {
+//                     sort($nights);
+//                     $selected_nights[$category] = $nights;
+//                 }
+//             }
+
+//         /*
+//          * ==========================================
+//          * SAVED HOTELS
+//          * ONLY FOR SELECTED NIGHTS
+//          * ==========================================
+//          */
+
+//         $saved_hotels = [];
+
+//         foreach ($data['hotels'] as $hotel) {
+
+//             $category = trim($hotel['hotel_category']);
+//             $night    = (int) $hotel['night'];
+
+//             if ($category == '' || $night <= 0) {
+//                 continue;
+//             }
+
+
+//             /*
+//              * Check:
+//              * Is this category selected for this night?
+//              */
+
+//             if (
+//                 !isset($selected_nights[$category]) ||
+//                 !in_array(
+//                     $night,
+//                     $selected_nights[$category]
+//                 )
+//             ) {
+//                 continue;
+//             }
+
+
+//             /*
+//              * Save hotel according to:
+//              *
+//              * night
+//              *   category
+//              *      hotel
+//              */
+
+//             if (!isset($saved_hotels[$night])) {
+//                 $saved_hotels[$night] = [];
+//             }
+
+//             if (!isset($saved_hotels[$night][$category])) {
+//                 $saved_hotels[$night][$category] = [];
+//             }
+
+//             $saved_hotels[$night][$category][] = $hotel;
+//         }
+
+
+//         /*
+//          * ==========================================
+//          * SORT SAVED HOTELS BY NIGHT
+//          * ==========================================
+//          */
+
+//         ksort($saved_hotels);
+
+
+//         /*
+//          * ==========================================
+//          * ENQUIRY DATA
+//          * TOTAL NIGHTS FROM ENQUIRY TABLE
+//          * ==========================================
+//          */
+
+//         $enquiry_id = !empty($data['quotation'][0]->enquiry_id)
+//             ? $data['quotation'][0]->enquiry_id
+//             : 0;
+
+//         $enquiry_nights = 0;
+
+//         if ($enquiry_id) {
+
+//             $enquiry = $this->db
+//                 ->select('number_of_nights')
+//                 ->where('id', $enquiry_id)
+//                 ->get('enquiry')
+//                 ->row();
+
+//             if ($enquiry) {
+//                 $enquiry_nights = (int) $enquiry->number_of_nights;
+//             }
+//         }
+
+
+//         /*
+//          * ==========================================
+//          * SEND DATA
+//          * ==========================================
+//          */
+
+//         $data['selected_nights'] = $selected_nights;
+
+//         $data['saved_hotels'] = $saved_hotels;
+
+//         /*
+//          * TOTAL NIGHTS
+//          * SOURCE = ENQUIRY TABLE
+//          */
+//         $data['enquiry_nights'] = $enquiry_nights;
+
+
+//         /*
+//          * Original complete hotel data
+//          * so existing functionality break nahi hogi.
+//          */
+//         $data['hotels'] = $data['hotels'];
+
+
+//         /*
+//          * ==========================================
+//          * LAST QUOTATION
+//          * ==========================================
+//          */
+
+//         $row = $this->db
+//             ->select('created')
+//             ->where('enquiry_id', $enquiry_id)
+//             ->order_by('created', 'DESC')
+//             ->limit(1)
+//             ->get('quotations')
+//             ->row_array();
+
+//         $data['last_quotation'] = !empty($row)
+//             ? $row['created']
+//             : '';
+
+
+//         /*
+//          * ==========================================
+//          * SUCCESS RESPONSE
+//          * ==========================================
+//          */
+
+//         $response = [
+//             'response' => 's',
+//             'details' => $data,
+//             'msg' =>
+//                 '<div class="alert alert-success">
+//                     Quotation Found Successfully!
+//                 </div>'
+//         ];
+//     }
+
+//     echo json_encode($response);
+//     exit;
+// }
+public function fetch_quotation()
+{
+    $response = [
+        'response' => 'e',
+        'details' => '',
+        'msg' => '<div class="alert alert-danger">Invalid Id. Try Again!</div>'
+    ];
+
+    if (
+        $this->input->post('id') != '' &&
+        is_numeric($this->input->post('id'))
+    ) {
+
+        $quotation_id = $this->input->post('id');
+
+
+        /*
+         * ==========================================
+         * QUOTATION DATA
+         * ==========================================
+         */
+
+        $join = [
+            [
+                'type' => 'LEFT',
+                'join_table' => 'quotation_hotel_details',
+                'condition' => 'quotations.id = quotation_hotel_details.quotation_id'
+            ]
+        ];
+
+        $where = 'quotations.id = ' . $quotation_id;
+
+        $select = '
+            quotations.*,
+            quotation_hotel_details.hotel_category,
+            quotation_hotel_details.hotel_name,
+            quotation_hotel_details.hotel_id,
+            quotation_hotel_details.hotel_room_details,
+            quotation_hotel_details.night
+        ';
+
+        $data['quotation'] = $this->common_model->get_data(
+            'quotations',
+            '',
+            '',
+            $select,
+            $where,
+            '',
+            false,
+            $join
+        );
+
+
+        /*
+         * ==========================================
+         * SITES DATA
+         * ==========================================
+         */
+
+        $data['sites_table_data'] = $this->db
+            ->get('sites')
+            ->result_array();
+
+
+        /*
+         * ==========================================
+         * HOTEL DETAILS
+         * ==========================================
+         */
+
+        $data['hotels'] = $this->db
+            ->where('quotation_id', $quotation_id)
+            ->get('quotation_hotel_details')
+            ->result_array();
+
+
+        /*
+         * ==========================================
+         * ENQUIRY DATA
+         * TOTAL NIGHTS
+         * ==========================================
+         */
+
+        $enquiry_id = !empty($data['quotation'][0]->enquiry_id)
+            ? $data['quotation'][0]->enquiry_id
+            : 0;
+
+        $enquiry_nights = 0;
+
+        if ($enquiry_id) {
+
+            $enquiry = $this->db
+                ->select('number_of_nights')
+                ->where('id', $enquiry_id)
+                ->get('enquiry')
+                ->row();
+
+            if ($enquiry) {
+                $enquiry_nights = (int) $enquiry->number_of_nights;
+            }
+        }
+
+
+        /*
+         * ==========================================
+         * SELECTED NIGHTS
+         * ==========================================
+         */
+
+        $selected_nights = [];
+
+        /*
+         * Original value from quotations table
+         */
+        $saved_selected_nights = '';
+
+        if (
+            !empty($data['quotation']) &&
+            isset($data['quotation'][0]->selected_nights)
+        ) {
+            $saved_selected_nights = trim(
+                (string) $data['quotation'][0]->selected_nights
+            );
+        }
+
+
+        /*
+         * ==========================================
+         * CASE 1
+         * SELECTED NIGHTS EXISTS IN DB
+         * ==========================================
+         */
+
+        if (
+            $saved_selected_nights !== '' &&
+            strtolower($saved_selected_nights) !== 'null'
+        ) {
+
+            $decoded_selected_nights = json_decode(
+                $saved_selected_nights,
+                true
+            );
+
+            /*
+             * Only use DB data if valid JSON object
+             */
+            if (
+                is_array($decoded_selected_nights) &&
+                !empty($decoded_selected_nights)
+            ) {
+
+                foreach (
+                    $decoded_selected_nights
+                    as $category => $nights
+                ) {
+
+                    $category = trim($category);
+
+                    if ($category == '') {
+                        continue;
+                    }
+
+                    /*
+                     * Make sure nights is array
+                     */
+                    if (!is_array($nights)) {
+                        $nights = [];
+                    }
+
+                    /*
+                     * Convert nights to integer
+                     */
+                    $nights = array_map(
+                        'intval',
+                        $nights
+                    );
+
+                    /*
+                     * Remove duplicate nights
+                     */
+                    $nights = array_values(
+                        array_unique($nights)
+                    );
+
+                    /*
+                     * Remove invalid nights
+                     */
+                    $nights = array_filter(
+                        $nights,
+                        function ($night) use ($enquiry_nights) {
+                            return (
+                                $night >= 1 &&
+                                $night <= $enquiry_nights
+                            );
+                        }
+                    );
+
+                    $nights = array_values($nights);
+
+                    sort($nights);
+
+                    $selected_nights[$category] = $nights;
+                }
+            }
+        }
+
+
+        /*
+         * ==========================================
+         * CASE 2
+         *
+         * selected_nights NULL / EMPTY / INVALID
+         *
+         * Get categories from this quotation's
+         * quotation_hotel_details.
+         *
+         * Then select ALL enquiry nights.
+         * ==========================================
+         */
+
+        if (
+            empty($selected_nights) &&
+            $enquiry_nights > 0 &&
+            !empty($data['hotels'])
+        ) {
+
+            /*
+             * Unique hotel categories
+             */
+            $hotel_categories = [];
+
+            foreach ($data['hotels'] as $hotel) {
+
+                $category = trim(
+                    $hotel['hotel_category']
+                );
+
+                if ($category == '') {
+                    continue;
+                }
+
+                if (
+                    !in_array(
+                        $category,
+                        $hotel_categories
+                    )
+                ) {
+                    $hotel_categories[] = $category;
+                }
+            }
+
+
+            /*
+             * ======================================
+             * ALL NIGHTS FOR EACH SAVED CATEGORY
+             *
+             * Example:
+             *
+             * Total nights = 4
+             *
+             * 4 Star => [1,2,3,4]
+             * 5 Star => [1,2,3,4]
+             * ======================================
+             */
+
+            foreach ($hotel_categories as $category) {
+
+                $selected_nights[$category] = [];
+
+                for (
+                    $night = 1;
+                    $night <= $enquiry_nights;
+                    $night++
+                ) {
+
+                    $selected_nights[$category][] = $night;
+                }
+            }
+        }
+
+
+        /*
+         * ==========================================
+         * SAVED HOTELS
+         * ==========================================
+         *
+         * Create:
+         *
+         * saved_hotels[
+         *     night
+         * ][
+         *     category
+         * ]
+         */
+
+        $saved_hotels = [];
+
+        foreach ($data['hotels'] as $hotel) {
+
+            $category = trim(
+                $hotel['hotel_category']
+            );
+
+            $night = (int) $hotel['night'];
+
+            if (
+                $category == '' ||
+                $night <= 0
+            ) {
+                continue;
+            }
+
+
+            /*
+             * Check whether this night is selected
+             * for this category.
+             */
+
+            if (
+                !isset(
+                    $selected_nights[$category]
+                ) ||
+                !in_array(
+                    $night,
+                    $selected_nights[$category]
+                )
+            ) {
+                continue;
+            }
+
+
+            /*
+             * Create night
+             */
+            if (!isset($saved_hotels[$night])) {
+
+                $saved_hotels[$night] = [];
+            }
+
+
+            /*
+             * Create category
+             */
+            if (
+                !isset(
+                    $saved_hotels[$night][$category]
+                )
+            ) {
+
+                $saved_hotels[$night][$category] = [];
+            }
+
+
+            /*
+             * Add hotel
+             */
+            $saved_hotels[$night][$category][] = $hotel;
+        }
+
+
+        /*
+         * ==========================================
+         * SORT SAVED HOTELS
+         * ==========================================
+         */
+
+        ksort($saved_hotels);
+
+
+        /*
+         * ==========================================
+         * DEBUG
+         * ==========================================
+         */
+
+        // log_message(
+        //     'error',
+        //     'QUOTATION ID: ' . $quotation_id
+        // );
+
+        // log_message(
+        //     'error',
+        //     'DB SELECTED NIGHTS: ' . $saved_selected_nights
+        // );
+
+        // log_message(
+        //     'error',
+        //     'FINAL SELECTED NIGHTS: ' .
+        //     json_encode($selected_nights)
+        // );
+
+
+        /*
+         * ==========================================
+         * SEND DATA
+         * ==========================================
+         */
+
+        $data['selected_nights'] = $selected_nights;
+
+        $data['saved_hotels'] = $saved_hotels;
+
+        $data['enquiry_nights'] = $enquiry_nights;
+
+        /*
+         * Keep original complete hotel data
+         */
+        $data['hotels'] = $data['hotels'];
+
+
+        /*
+         * ==========================================
+         * LAST QUOTATION
+         * ==========================================
+         */
+
+        $row = $this->db
+            ->select('created')
+            ->where(
+                'enquiry_id',
+                $enquiry_id
+            )
+            ->order_by(
+                'created',
+                'DESC'
+            )
+            ->limit(1)
+            ->get('quotations')
+            ->row_array();
+
+        $data['last_quotation'] =
+            !empty($row)
+                ? $row['created']
+                : '';
+
+
+        /*
+         * ==========================================
+         * SUCCESS RESPONSE
+         * ==========================================
+         */
+
+        $response = [
+            'response' => 's',
+            'details' => $data,
+            'msg' =>
+                '<div class="alert alert-success">
+                    Quotation Found Successfully!
+                </div>'
+        ];
+    }
+
+    echo json_encode($response);
+    exit;
+}
+    // for fetch quotation data
+    public function fetch_quotation_by_id()
+    {
+        $quotationId = $this->input->post('quotation_id');
+
+        if (!$quotationId) {
+            echo json_encode([
+                'status' => false,
+                'message' => 'Quotation ID missing'
+            ]);
+            return;
+        }
+
+        $quotation = $this->db
+            ->where('id', $quotationId)
+            ->get('quotations')
+            ->row_array();
+
+        if ($quotation) {
+            echo json_encode([
+                'status' => true,
+                'data'   => $quotation
+            ]);
+        } else {
+            echo json_encode([
+                'status' => false,
+                'message' => 'Quotation not found'
+            ]);
+        }
+    }
+    
+ public function save_updated_quotation_log()
+{
+    // Get POST data
+    $enquiry_id = $this->input->post('enquiry_id');
+    $quotation_id = $this->input->post('quotation_id');
+    $quotation_log_id = $this->input->post('reference_id');
+    $user_id = $this->session->userdata('id');
+
+
+    // ==========================================
+    // UPDATE SELECTED NIGHTS IN QUOTATIONS
+    // ==========================================
+
+    $selected_nights = $this->input->post('selected_nights');
+    if (empty($selected_nights)) {
+        $selected_nights = '{}';
+    }
+
+    // Validate JSON
+    $decoded_selected_nights = json_decode($selected_nights, true);
+
+    if (
+        json_last_error() !== JSON_ERROR_NONE ||
+        !is_array($decoded_selected_nights)
+    ) {
+        $selected_nights = '{}';
+    }
+
+    // Update same quotation row
+    $this->db->where('id', $quotation_id);
+
+    $this->db->update(
+        'quotations',
+        array(
+            'selected_nights' => $selected_nights
+        )
+    );
+
+    log_message(
+        'debug',
+        'SELECTED NIGHTS UPDATED FOR QUOTATION ID '
+        .$quotation_id.': '.$selected_nights
+    );
+
+
+    // ==========================================
+    // EXISTING CODE CONTINUES
+    // ==========================================
+
+    // Get the latest existing data from quotation_log table
+        $this->db->where('enquiry_id', $enquiry_id);
+        $this->db->where('id', $quotation_log_id);
+        $this->db->where('created_by', $user_id);
+        $this->db->order_by('id', 'DESC');
+        $this->db->limit(1);
+        $existing_log = $this->db->get('quotation_log')->row_array();
+        
+        // Get current/updated values from POST data
+        $hotel_data = $this->input->post('hotel_costing_category_wise');
+        $transport = floatval($this->input->post('final_transport'));
+        $ticket_adult = floatval($this->input->post('hdn_final_ticket_price'));
+        $ticket_group = floatval($this->input->post('hdn_final_group_ticket_price'));
+        $ticket_child = floatval($this->input->post('hdn_final_child_ticket_price'));
+        $activities_adult = floatval($this->input->post('all_day_activities_total'));
+        $activities_child = floatval($this->input->post('all_day_child_activities_total'));
+        $activities_group = floatval($this->input->post('all_day_group_acitivities'));
+        
+        $adult_mandatory_grand_total = floatval($this->input->post('hdn_mandatory_grand_total'));
+        $child_mandatory_grand_total = floatval($this->input->post('child_mandatory_grand_total'));
+
+        $guide_total = floatval($this->input->post('hdn_guide_grand_total'));
+        $discount_bundle_price = floatval($this->input->post('discount_bundle_price'));
+        $meal_total = floatval($this->input->post('meal_total'));
+        $train_child_price = floatval($this->input->post('train_child_price'));
+        $train_adult_price = floatval($this->input->post('train_adult_price'));
+        
+        $driver_grand_total = floatval($this->input->post('driver_grand_total'));
+        $entrance_group_total = floatval($this->input->post('entrance_group_total'));
+        $entrance_child_total = floatval($this->input->post('entrance_child_total'));
+        $entrance_adult_total = floatval($this->input->post('entrance_adult_total'));
+        
+        $transport_updated = $transport - $discount_bundle_price;
+        
+        // Calculate updated hotel total from JSON
+        $hotel_total_updated = 0;
+        if (!empty($hotel_data)) {
+            $hotel_array = json_decode($hotel_data, true);
+            
+            if (is_array($hotel_array)) {
+                function sumHotelValues($array) {
+                    $total = 0;
+                    
+                    foreach ($array as $value) {
+                        if (is_array($value)) {
+                            $total += sumHotelValues($value);
+                        } elseif (is_string($value)) {
+                            if (strpos($value, '__') !== false) {
+                                $parts = explode('__', $value);
+                                $price = end($parts);
+                                $total += floatval($price);
+                            }
+                        }
+                    }
+                    
+                    return $total;
+                }
+                
+                $hotel_total_updated = sumHotelValues($hotel_array);
+            }
+        }
+        
+        // Calculate updated totals
+        $tickets_total_updated = $ticket_adult + $ticket_group + $ticket_child;
+        $activities_total_updated = $activities_adult + $activities_child + $activities_group;
+        
+        $entrance_total = $entrance_group_total + $entrance_child_total + $entrance_adult_total;
+        
+        $mandatory_total = $adult_mandatory_grand_total + $child_mandatory_grand_total;
+        
+        // Calculate updated overall total
+        $overall_total_updated = $hotel_total_updated + $transport_updated + $tickets_total_updated + $activities_total_updated 
+                                + $mandatory_total + $guide_total + $meal_total + $train_child_price + $train_adult_price + $driver_grand_total + $entrance_total;
+        
+        // Check if we have existing data
+        if ($existing_log) {
+            // Extract existing values FROM DATABASE
+            $existing_hotel = floatval($existing_log['hotel']);
+            $existing_transport = floatval($existing_log['transport']);
+            $existing_ticket = floatval($existing_log['tickets']);
+            $existing_activities = floatval($existing_log['activities']);
+            $existing_mandatory_total = floatval($existing_log['mandatory_total']);
+            $existing_guide_total = floatval($existing_log['guide_total']);
+            $existing_transport_discount = floatval($existing_log['transport_discount']);
+            $existing_overall_total = floatval($existing_log['overall_total']);
+            $quotation_log_id = $existing_log['id'];
+            $existing_roe = $existing_log['roe'];
+            $existing_driver_total = floatval($existing_log['driver_total']);
+            $existing_entrance_total = floatval($existing_log['entrance_total']);
+            $existing_meal = $existing_log['meal_total'];
+            $existing_train_child = $existing_log['train_transfer_child_cost'];
+            $existing_train_adult = $existing_log['train_transfer_adult_cost'];
+            
+            // Calculate margin price (updated - existing)
+            $margin = $overall_total_updated - $existing_overall_total;
+            
+            // Check if there's a difference
+            $has_difference = 'no';
+            if (abs($existing_overall_total - $overall_total_updated) > 0.01) {
+                $has_difference = 'yes';
+            }
+            
+            // Check if any individual component has difference
+            if ($has_difference == 'no') {
+                if (abs($existing_hotel - $hotel_total_updated) > 0.01 ||
+                    abs($existing_transport - $transport_updated) > 0.01 ||
+                    abs($existing_ticket - $tickets_total_updated) > 0.01 ||
+                    abs($existing_activities - $activities_total_updated) > 0.01 ||
+                    abs($existing_mandatory_total - $mandatory_total) > 0.01 ||
+                    abs($existing_guide_total - $guide_total) > 0.01 ||
+                    abs($existing_driver_total - $driver_grand_total) > 0.01 ||
+                    abs($existing_entrance_total - $entrance_total) > 0.01 ||
+                    abs($existing_meal - $meal_total) > 0.01 ||
+                    abs($existing_train_child - $train_child_price) > 0.01 ||
+                    abs($existing_train_adult - $train_adult_price) > 0.01 ||
+                    abs($existing_transport_discount - $discount_bundle_price) > 0.01) {
+                    $has_difference = 'yes';
+                }
+            }
+        } else {
+            // No existing data found, use defaults
+            $existing_hotel = 0;
+            $existing_transport = 0;
+            $existing_ticket = 0;
+            $existing_activities = 0;
+            $existing_mandatory_total = 0;
+            $existing_guide_total = 0;
+            $existing_meal = 0;
+            $existing_train_child = 0;
+            $existing_train_adult = 0;
+            $existing_transport_discount = 0;
+            $existing_overall_total = 0;
+            $quotation_log_id = 0;
+            $existing_driver_total=0;
+            $existing_entrance_total=0;
+            $margin = $overall_total_updated;
+            $has_difference = 'yes';
+        }
+        
+        // Prepare data for insertion
+        $log_data = array(
+            'enquiry_id' => $enquiry_id,
+            'quotation_id' => $quotation_id,
+            
+            // Existing values FROM DATABASE
+            'existing_hotel' => $existing_hotel,
+            'existing_transport' => $existing_transport,
+            'existing_ticket' => $existing_ticket,
+            'existing_activities' => $existing_activities,
+            'existing_mandatory_total' => $existing_mandatory_total,
+            'existing_guide_total' => $existing_guide_total,
+            'existing_driver_total' => $existing_driver_total,
+            'existing_entrance_total' => $existing_entrance_total,
+            'existing_meal' => $existing_meal,
+            'existing_train_transfer_adult_cost' => $existing_train_adult,
+            'existing_train_transfer_child_cost' => $existing_train_child,
+            'existing_transport_discount' => $existing_transport_discount,
+            'existing_overall_total' => $existing_overall_total,
+            'quotation_log_id' => $quotation_log_id,
+            'roe' => $existing_roe,
+            
+            // Updated values FROM CURRENT FORM
+            'updated_hotel' => $hotel_total_updated,
+            'updated_transport' => $transport_updated,
+            'updated_ticket' => $tickets_total_updated,
+            'updated_activities' => $activities_total_updated,
+            'updated_mandatory_total' => $mandatory_total,
+            'updated_guide_total' => $guide_total,
+            'updated_meal' => $meal_total,
+            'updated_train_transfer_adult_cost' => $train_adult_price,
+            'updated_train_transfer_child_cost' => $train_child_price,
+            'updated_transport_discount' => $discount_bundle_price,
+            'updated_driver_total' => $driver_grand_total,
+            'updated_entrance_total' => $entrance_total,
+            'updated_overall_total' => $overall_total_updated,
+            
+            // Margin and difference
+            'margin' => $margin,
+            'difference' => $has_difference,
+            
+            // Metadata
+            'created_by' => $user_id,
+            'created_at' => date('Y-m-d H:i:s')
+        );
+        
+        // Save to updated_quotation_logs table ONLY
+        $result = $this->db->insert('updated_quotation_logs', $log_data);
+        $id = $this->db->insert_id();
+        
+        echo json_encode(array(
+            'success' => $result,
+            'message' => $result ? 'Updated quotation log saved successfully' : 'Failed to save updated quotation log',
+            'log_id' => $id,
+            'updated_overall_total' => $overall_total_updated,
+            'existing_overall_total' => $existing_overall_total,
+            'margin' => $margin,
+            'difference' => $has_difference
+        ));
+    }
+    
+    public function get_by_id(){
+        //echo '<pre>';print_r($this->input->post());exit;
+        $table_name = $this->input->post('tname');
+        $where = $table_name.'.id = '.$this->input->post('id');
+        $select = '*';
+        $data['result'] = $this->common_model->get_data($table_name,'', '', $select,$where,'', $count = false);
+        $response = ['response' => 's', 'details' => $data, 'msg' => ''];
+        echo json_encode($response);
+        exit;
+    }
+
+    public function getItineraryContent()
+    {   
+        $enquiry_no = $this->input->get('enquiry_no');
+
+        $sql = "
+            SELECT itc.*
+            FROM itinerary_templates_content itc
+            WHERE itc.country = (
+                SELECT CASE SUBSTRING(e.enquiry_abbr, 2, 2)
+                        WHEN 'AZ' THEN 'azerbaijan'
+                        WHEN 'AR' THEN 'armenia'
+                        WHEN 'BZ' THEN 'belarus'
+                        WHEN 'GE' THEN 'georgia'
+                        WHEN 'KZ' THEN 'kazakhstan'
+                        WHEN 'UZ' THEN 'uzbekistan'
+                    END
+                FROM enquiry e
+                WHERE e.enquiry_no = ?
+            )
+            AND itc.status != 'deleted'
+            AND itc.day IN ('start', 'last')
+            ORDER BY FIELD(itc.day, 'start','last')
+        ";
+
+        $result = $this->db->query($sql, [$enquiry_no])->result();
+        $siteData = "
+            SELECT id, site_name, description
+            FROM sites;";
+        $siteResult = $this->db->query($siteData)->result();
+
+        $firstDay = '';
+        $lastDay  = '';
+
+        if (!empty($result)) {
+            foreach ($result as $row) {
+                $decodedContent = urldecode($row->content); 
+                $decodedContent = html_entity_decode($decodedContent, ENT_QUOTES, 'UTF-8');
+
+                if ($row->day == 'start') {
+                    $firstDay = $decodedContent;
+                }
+                if ($row->day == 'last') {
+                    $lastDay = $decodedContent;
+                }
+            }
+        }
+        foreach ($result as $row) {
+            $decodedContent = urldecode($row->content); 
+            $decodedContent = html_entity_decode($decodedContent, ENT_QUOTES, 'UTF-8');
+        
+            // Belarus -> Minsk (sirf Belarus ki rows ke liye)
+            if (strtolower($row->country) == 'belarus') {
+                $decodedContent = str_ireplace('Welcome to Belarus', 'Welcome to Minsk', $decodedContent);
+            }
+        
+            if ($row->day == 'start') {
+                $firstDay = $decodedContent;
+            }
+            if ($row->day == 'last') {
+                $lastDay = $decodedContent;
+            }
+        }
+
+        echo json_encode([
+            'status'   => 'success',
+            'firstDay' => $firstDay,
+            'lastDay'  => $lastDay,
+            'siteData' => $siteResult,
+        ]);
+    }
+
+    // view hotel category data
+    public function view_hotel_Category($category_id)
+    {
+        // Decode if category_id is encoded
+        $category_id = is_numeric($category_id) ? $category_id : base64_decode($category_id);
+        
+        // Fetch category details
+        $this->db->select('hrc.*, h.name as hotel_name, h.location as hotel_location');
+        $this->db->from('hotel_room_categories hrc');
+        $this->db->join('hotels h', 'h.id = hrc.hotel_id', 'left');
+        $this->db->where('hrc.id', $category_id);
+        $category_data = $this->db->get()->row();
+        
+        if (!$category_data) {
+            show_404();
+        }
+        
+        $data['category'] = $category_data;
+        $data['page_title'] = $category_data->category_name . ' - Room Category';
+        
+        $this->load->view('admin/room_category_page',$data);
+    }
+    
+    
+    private function get_category_id_by_name_new($category_name, $hotel_id)
+    {
+        // $category_name = strstr($category_name, '_', true);
+        $category_name = trim($category_name);
+        
+        $this->db->select('id');
+        $this->db->from('hotels');
+        $this->db->where('id', $hotel_id);
+        $this->db->limit(1);
+        $hotel_query = $this->db->get();
+        
+        if ($hotel_query->num_rows() == 0) {
+            return 0;
+        }
+        
+        $hotel_id = $hotel_query->row()->id;
+        
+        $this->db->select('id, category_description, category_image');
+        $this->db->from('hotel_room_categories');
+        $this->db->where('category_name', $category_name);
+        $this->db->where('hotel_id', $hotel_id);
+        $this->db->where("category_description IS NOT NULL");
+        $this->db->where("category_description != ''");
+        $this->db->where("category_image IS NOT NULL");
+        $this->db->where("category_image != ''");
+        $this->db->limit(1);
+        
+        $category_query = $this->db->get();
+        if ($category_query->num_rows() > 0) {
+            return $category_query->row()->id;
+        }
+        
+        return 0; 
+    }
+    
+    private function get_category_id_by_name($category_name, $hotel_id)
+    {
+        $category_name = strstr($category_name, '_', true);
+        // $category_name = trim($category_name);
+        // $hotel_name = strstr($hotel_name, '_', true);
+        
+        $this->db->select('id');
+        $this->db->from('hotels');
+        $this->db->where('id', $hotel_id);
+        $this->db->limit(1);
+        $hotel_query = $this->db->get();
+        
+        if ($hotel_query->num_rows() == 0) {
+            return 0;
+        }
+        
+        $hotel_id = $hotel_query->row()->id;
+        
+        $this->db->select('id, category_description, category_image');
+        $this->db->from('hotel_room_categories');
+        $this->db->where('category_name', $category_name);
+        $this->db->where('hotel_id', $hotel_id);
+        $this->db->where("category_description IS NOT NULL");
+        $this->db->where("category_description != ''");
+        $this->db->where("category_image IS NOT NULL");
+        $this->db->where("category_image != ''");
+        $this->db->limit(1);
+        
+        $category_query = $this->db->get();
+        if ($category_query->num_rows() > 0) {
+            return $category_query->row()->id;
+        }
+        
+        return 0; 
+    }
+    
+    
+    public function check_same_hotels()
+    {
+        $quote_id = $this->input->post('quote_id');
+        
+        if ($quote_id) {
+            $this->db->select('same_hotels_all_nights, hotel_details');
+            $this->db->from('quotations');
+            $this->db->where('id', $quote_id);
+            $query = $this->db->get();
+            
+            if ($query->num_rows() > 0) {
+                $row = $query->row();
+                echo json_encode([
+                    'success' => true,
+                    'same_hotels_all_nights' => $row->same_hotels_all_nights,
+                    'hotel_details' => $row->hotel_details
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Quote not found'
+                ]);
+            }
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Invalid quote ID'
+            ]);
+        }
+    }
+
+    public function get_quote_hotels()
+    {
+        $quote_id = $this->input->post('quote_id');
+        if (!$quote_id) {
+            echo json_encode(['success' => false, 'message' => 'Invalid quote ID']);
+            return;
+        }
+
+        $this->db->select('hotel_category, hotel_name, hotel_id, hotel_room_details');
+        $this->db->from('quotation_hotel_details');
+        $this->db->where('quotation_id', $quote_id);
+        $this->db->where('hotel_id !=', 0);
+        $this->db->group_by('hotel_id');
+        $query = $this->db->get();
+        $hotels = $query->result_array();
+
+        foreach ($hotels as &$hotel) {
+            $roomDetails = json_decode($hotel['hotel_room_details'], true);
+            if (is_string($roomDetails)) {
+                $roomDetails = json_decode($roomDetails, true);
+            }
+            $hotel['rooms'] = [];
+
+            if (is_array($roomDetails)) {
+                foreach ($roomDetails as $rawRoomName => $roomConfigs) {
+                    $cleanRoomName = preg_replace('/^\d+_/', '', $rawRoomName);
+                    $adultOptions = [];
+                    $childOptions = [];
+
+                    foreach ($roomConfigs as $config) {
+                        if (isset($config['room_type']) && is_array($config['room_type'])) {
+                            foreach ($config['room_type'] as $typeStr) {
+                                // Adult: 3(A) 72400
+                                if (preg_match('/^(\d+)\(A\)\s+([\d\.]+)/', $typeStr, $matches)) {
+                                    $adultOptions[] = [
+                                        'occupancy' => (int)$matches[1],
+                                        'price'     => (float)$matches[2],
+                                        'label'     => $this->getOccupancyLabel($matches[1])
+                                    ];
+                                }
+                                // Child: 1(C) 43.3 CWB  or  contains CNB/CWB
+                                elseif (preg_match('/^(\d+)\(C\)\s+([\d\.]+)\s+(CWB|CNB)/i', $typeStr, $matches)) {
+                                    $childOptions[] = [
+                                        'type'  => strtoupper($matches[3]),
+                                        'price' => (float)$matches[2],
+                                        'label' => $matches[3] . ' Child'
+                                    ];
+                                }
+                            }
+                        }
+                    }
+
+                    // Merge adult and child options into one list, but keep them distinguishable
+                    $hotel['rooms'][$cleanRoomName] = [
+                        'adult' => $adultOptions,
+                        'child' => $childOptions
+                    ];
+                }
+            }
+        }
+
+        echo json_encode(['success' => true, 'data' => $hotels]);
+    }
+
+    private function getOccupancyLabel($occupancy)
+    {
+        $labels = [
+            1 => 'Single Occupancy',
+            2 => 'Double/Twin Occupancy',
+            3 => 'Triple Occupancy',
+            4 => 'Quad Occupancy',
+            5 => 'Quint Occupancy',
+            6 => 'Sext Occupancy'
+        ];
+        return $labels[$occupancy] ?? $occupancy . ' Occupancy';
+    }
+    
+    private function get_hotel_id_by_name($hotel_name)
+    {
+        $this->db->select('id, image, city');
+        $this->db->from('hotels');
+        $this->db->where('name', trim($hotel_name));
+        $hotel_query = $this->db->get();
+
+        if ($hotel_query->num_rows() > 0) {
+            return $hotel_query->row();
+        }
+        return null;
+    }
+    
+    private function get_hotel_id_by_name_new($hotel_id)
+    {
+        $this->db->select('id, image, city');
+        $this->db->from('hotels');
+        $this->db->where('id', $hotel_id);
+        $hotel_query = $this->db->get();
+
+        if ($hotel_query->num_rows() > 0) {
+            return $hotel_query->row();
+        }
+        return null;
+    }
+    
+  
+    
+    public function mark_final() 
+    {
+        $json = file_get_contents('php://input');
+        $data = json_decode($json, true);
+        
+        $quote_id = $data['quote_id'] ?? null;
+        $enquiry_id = isset($data['enquiry_id']) ? base64_decode($data['enquiry_id']) : null;
+        $room_breakdown = $data['room_breakdown'] ?? [];
+        $total_rooms = $data['total_rooms'] ?? 0;
+        $cnb = (int)($data['cnb'] ?? 0);
+        $cnb_count = (int)($data['cnb_count'] ?? 0);
+        $cwb = (int)($data['cwb'] ?? 0);
+        $cwb_count = (int)($data['cwb_count'] ?? 0);
+        
+        if (!$quote_id || !$enquiry_id) {
+            echo json_encode(['success' => false, 'message' => 'Invalid data']);
+            return;
+        }
+        
+        try {
+            $this->db->where('enquiry_id', $enquiry_id)->update('quotations', ['quot_final' => 'no']);
+            $this->db->where('id', $quote_id)->where('enquiry_id', $enquiry_id)->update('quotations', [
+                'quot_final' => 'yes',
+                'room_breakdown' => !empty($room_breakdown) ? json_encode($room_breakdown) : NULL,
+                'total_rooms' => $total_rooms,
+                'cnb' => $cnb,
+                'cnb_count' => $cnb_count,
+                'cwb' => $cwb,
+                'cwb_count' => $cwb_count
+            ]);
+            echo json_encode(['success' => true, 'message' => 'Quote updated successfully']);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
+    // final budget report
+    public function finalize_budget() 
+    {
+        $saved_id = $this->input->post('saved_id');
+        $quote_id = $this->input->post('quote_id');
+        $enq_id = $this->input->post('enq_id');
+
+        if (!$saved_id) {
+            echo json_encode(['success' => false, 'message' => 'Invalid saved budget ID']);
+            return;
+        }
+
+        // Update final_budget to 'yes' for this record
+        $this->db->where('id', $saved_id);
+        $this->db->update('saved_budget_reports', ['final_budget' => 'yes']);
+
+        if ($this->db->affected_rows() >= 0) {
+            // Optionally, set all other records for this quote/enquiry to 'no' (if only one should be final)
+            $this->db->where('quote_id', $quote_id);
+            $this->db->where('enquiry_id', $enq_id);
+            $this->db->where('id !=', $saved_id);
+            $this->db->update('saved_budget_reports', ['final_budget' => 'no']);
+
+            echo json_encode(['success' => true, 'message' => 'Budget finalized successfully']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'No changes made']);
+        }
+    }
+    
+    public function get_budget_report()
+    {
+        $vehicless_json = $this->input->post('vehicless');
+        $vehicless_arr = json_decode($vehicless_json, true);
+    
+        $postData = $this->input->post();
+    
+        if (empty($postData['enquiry_id'])) {
+            show_error('Enquiry ID is required to generate budget report.');
+            return;
+        }
+    
+        $data['form'] = $postData;
+        $enquiry_id = $postData['enquiry_id'];
+    
+        // Get enquiry data
+        $where = 'enquiry.id = "' . $this->db->escape_str($enquiry_id) . '"';
+        $join = [
+            [
+                'type' => 'LEFT',
+                'join_table' => 'company_details',
+                'condition' => 'company_details.company_id = enquiry.company_details_id'
+            ],
+            [
+                'type' => 'LEFT', 
+                'join_table' => 'company',
+                'condition' => 'company.company_id = enquiry.company_id'
+            ],
+        ];
+    
+        $enquiryData = $this->common_model->get_data('enquiry', '', '', '*', $where, '', false, $join);
+        if (empty($enquiryData)) {
+            show_error('No enquiry found for ID ' . $enquiry_id);
+            return;
+        }
+    
+        $data['enquiry'] = $enquiryData[0];
+        $total_persons = $data['enquiry']->number_persons + $data['enquiry']->number_child;
+        $data['total_persons'] = $total_persons;
+        
+        // Get currency
+        $char = substr($data['enquiry']->enquiry_abbr, 1, 2);
+        $country = COUNTRY_ABBR;
+    
+        $where = 'currency_value.country = "' . strtolower($country[$char]) . '" AND currency_value.status = "active" Order by currency_value.id DESC';
+        $currencyData = $this->common_model->get_data('currency_value', '', '', '*', $where, '', false);
+        $currency = isset($postData['roe']) ? (float)$postData['roe'] : '';
+    
+        $data['currency'] = $currency;
+        $data['country'] = $currencyData[0]->country ?? '';
+        $data['currency_abbr'] = $currencyData[0]->currency_abbr ?? '';
+    
+        // Use the new parameter name
+        $data['guideTotals'] = json_decode($postData['guide_totals'], true);
+        $data['ticket_totals'] = json_decode($postData['ticket_totals'], true);
+        $data['mandatory_data'] = json_decode($postData['mandatory_data'], true);
+        $data['final_transport'] = $postData['final_transport'] ?? 0;
+        $data['vehicless'] = $postData['vehicless'] ?? '';
+        $data['luggage_vehicle'] = $postData['luggage_vehicle'] ?? '';
+        $data['all_day_luggage_total'] = $postData['all_day_luggage_total'] ?? 0;
+        $data['outside_cost'] = $postData['outside_cost'] ?? '';
+    
+        $vehicless_data = json_decode($postData['vehicless'], true);
+        $vehicle_names = [];
+        $vehicle_quantities = [];
+        
+        if (!empty($vehicless_data) && is_array($vehicless_data)) {
+            foreach ($vehicless_data as $vehicle) {
+                $vehicle_id = $vehicle['vehicle_id'] ?? '';
+                $quantity = $vehicle['qnty'] ?? '';
+                
+                if (!empty($vehicle_id)) {
+                    // Fetch vehicle name from transportation table
+                    $where = "id = '" . $this->db->escape_str($vehicle_id) . "'";
+                    $vehicle_data = $this->common_model->get_data('transportation', '', '', '*', $where, '', false);
+                    
+                    $vehicle_name = '';
+                    if (!empty($vehicle_data)) {
+                        $vehicle_name = $vehicle_data[0]->vehicle_name ?? 'Vehicle ' . $vehicle_id;
+                    } else {
+                        $vehicle_name = 'Vehicle ' . $vehicle_id;
+                    }
+                    
+                    $vehicle_names[] = $vehicle_name;
+                    $vehicle_quantities[] = $quantity;
+                }
+            }
+        }
+        
+        $data['vehicle_names'] = implode(', ', $vehicle_names);
+        $data['vehicle_quantities'] = implode(', ', $vehicle_quantities);
+    
+        // HOTEL DATA PROCESSING WITH NULL CHECKS
+        $data['hotels'] = []; // Initialize empty array
+        
+        if($postData['hdn_group_type'] == 'individual') {
+            $hotel_data = $postData['hotel_costing_category_wise'] ?? '';
+            
+            // FIX: Check if hotel data exists and is valid JSON
+            if (!empty($hotel_data)) {
+                $decoded_hotel_data = json_decode($hotel_data);
+                
+                // Check if decoding was successful and data is not null
+                if ($decoded_hotel_data !== null && is_object($decoded_hotel_data)) {
+                    $data['hotel_data'] = $decoded_hotel_data;
+                    
+                    $night_cnt = isset($postData['nights']) && $postData['nights'] > 0 
+                        ? (int)$postData['nights'] - 1
+                        : (int)$this->input->get('number_of_nights');
+                    
+                    if ($night_cnt <= 0) {
+                        $night_cnt = 1;
+                    }
+                    
+                    $hotels = [];
+                    $data['nightTotals'] = json_decode($postData['night_total'], true) ?? [];
+                    $globalPriceIndex = 0;
+    
+                    // FIX: Check if hotel_data is iterable
+                    if (is_object($data['hotel_data']) || is_array($data['hotel_data'])) {
+                        foreach ($data['hotel_data'] as $category => $hotelsInCategory) {
+                            // Check if hotelsInCategory exists and is iterable
+                            if (!empty($hotelsInCategory) && (is_object($hotelsInCategory) || is_array($hotelsInCategory))) {
+                                foreach ($hotelsInCategory as $hotelName => $hotelInfo) {
+                                    // Check if hotelInfo exists
+                                    if (!empty($hotelInfo)) {
+                                        $night_count = 0;
+                                        
+                                        if (isset($hotelInfo->nights) && !empty($hotelInfo->nights)) {
+                                            if (is_array($hotelInfo->nights)) {
+                                                $night_count = count($hotelInfo->nights);
+                                            } elseif (is_numeric($hotelInfo->nights)) {
+                                                $night_count = 1;
+                                            } elseif (is_string($hotelInfo->nights)) {
+                                                $night_count = count(explode(',', $hotelInfo->nights));
+                                            }
+                                        } else {
+                                            $night_count = $night_cnt;
+                                        }
+                                        
+                                        $room_types_detail = [];
+                                        $hotel_total_price = 0;
+                                        $hotel_room_count = 0;
+                                        
+                                        // Check if hotelInfo is an object/array and has properties
+                                        if (is_object($hotelInfo) || is_array($hotelInfo)) {
+                                            foreach ($hotelInfo as $key => $value) {
+                                                if (is_array($value)) {
+                                                    foreach ($value as $occupancy) {
+                                                        if (is_string($occupancy) && preg_match('/__(\d+)$/', $occupancy, $matches)) {
+                                                            $base_price = (int)$matches[1];
+                                                            $assigned_price = isset($data['nightTotals'][$globalPriceIndex]) ? $data['nightTotals'][$globalPriceIndex] : 0;
+                                                            
+                                                            $room_types_detail[] = [
+                                                                'room_type' => $key,
+                                                                'occupancy' => $occupancy,
+                                                                'base_price' => $base_price,
+                                                                'assigned_price' => $assigned_price,
+                                                                'price_index' => $globalPriceIndex
+                                                            ];
+                                                            
+                                                            $hotel_total_price += $assigned_price;
+                                                            $hotel_room_count++;
+                                                            $globalPriceIndex++;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        
+                                        $hotels[] = [
+                                            'hotel_name' => $hotelName,
+                                            'night_count' => $night_count == 0 ? $night_cnt : $night_count,
+                                            'room_types_detail' => $room_types_detail,
+                                            'hotel_total_price' => $hotel_total_price,
+                                            'hotel_room_count' => $hotel_room_count,
+                                            'price_range' => [
+                                                'start_index' => $globalPriceIndex - $hotel_room_count,
+                                                'end_index' => $globalPriceIndex - 1,
+                                                'count' => $hotel_room_count
+                                            ]
+                                        ];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    $data['hotels'] = $hotels;
+                } else {
+                    // Hotel data is empty or invalid
+                    $data['hotels'] = [];
+                }
+            } else {
+                // No hotel data provided
+                $data['hotels'] = [];
+            }
+        } else {
+            // GROUP TYPE PROCESSING
+            $data['nightTotals'] = json_decode($postData['all_hotel_grand_totals'], true) ?? [];
+            $hotel_names_json = $postData['hotel_names_category_wise'] ?? '';
+            
+            if (!empty($hotel_names_json)) {
+                $decoded_hotel_names = json_decode($hotel_names_json);
+                
+                if ($decoded_hotel_names !== null && is_object($decoded_hotel_names)) {
+                    $data['hotel_data'] = $decoded_hotel_names;
+                    
+                    $night_cnt = isset($postData['nights']) && $postData['nights'] > 0 
+                        ? (int)$postData['nights'] - 1
+                        : (int)$this->input->get('number_of_nights');
+    
+                    if ($night_cnt <= 0) {
+                        $night_cnt = 1;
+                    }
+    
+                    $hotels = [];
+                    $globalPriceIndex = 0;
+    
+                    // FIX: Check if hotel_data is iterable
+                    if (is_object($data['hotel_data']) || is_array($data['hotel_data'])) {
+                        foreach ($data['hotel_data'] as $category => $hotelsInCategory) {
+                            // Check if hotelsInCategory exists and is iterable
+                            if (!empty($hotelsInCategory) && (is_object($hotelsInCategory) || is_array($hotelsInCategory))) {
+                                foreach ($hotelsInCategory as $hotelInfo) {
+                                    // Check if hotelInfo exists
+                                    if (!empty($hotelInfo)) {
+                                        $night_count = 0;
+                                        
+                                        if (isset($hotelInfo->nights) && !empty($hotelInfo->nights)) {
+                                            if (is_array($hotelInfo->nights)) {
+                                                $night_count = count($hotelInfo->nights);
+                                            } elseif (is_numeric($hotelInfo->nights)) {
+                                                $night_count = 1;
+                                            } elseif (is_string($hotelInfo->nights)) {
+                                                $night_count = count(explode(',', $hotelInfo->nights));
+                                            }
+                                        } else {
+                                            $night_count = $night_cnt;
+                                        }
+    
+                                        $hotel_total_price = isset($data['nightTotals'][$globalPriceIndex])
+                                            ? $data['nightTotals'][$globalPriceIndex]
+                                            : 0;
+    
+                                        $hotels[] = [
+                                            'hotel_name' => $hotelInfo->hotel_name ?? 'Unknown Hotel',
+                                            'night_count' => $night_count,
+                                            'hotel_total_price' => $hotel_total_price,
+                                        ];
+    
+                                        $globalPriceIndex++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    $data['hotels'] = $hotels;
+                } else {
+                    // Hotel data is empty or invalid
+                    $data['hotels'] = [];
+                }
+            } else {
+                // No hotel data provided
+                $data['hotels'] = [];
+            }
+        }
+        
+        // Load the budget report view
+        $this->load->view('admin/budget_report', $data);
+    }
+    
+      // save quotation data logs
+    public function save_quotation_log() 
+    {
+        $enquiry_id = $this->input->post('enquiry_id');
+        $roe = floatval($this->input->post('roe'));
+        // Get POST data from the AJAX request
+        $hotel_data = $this->input->post('hotel_costing_category_wise');
+        $transport = floatval($this->input->post('final_transport'));
+        $ticket_adult = floatval($this->input->post('hdn_final_ticket_price'));
+        $ticket_group = floatval($this->input->post('hdn_final_group_ticket_price'));
+        $ticket_child = floatval($this->input->post('hdn_final_child_ticket_price'));
+        $activities_adult = floatval($this->input->post('all_day_activities_total'));
+        $activities_child = floatval($this->input->post('all_day_child_activities_total'));
+        $activities_group = floatval($this->input->post('all_day_group_acitivities'));
+        
+        $adult_mandatory_grand_total = floatval($this->input->post('hdn_mandatory_grand_total'));
+        $child_mandatory_grand_total = floatval($this->input->post('child_mandatory_grand_total'));
+        
+        $guide_total = floatval($this->input->post('hdn_guide_grand_total'));
+        $discount_bundle_price = floatval($this->input->post('discount_bundle_price'));
+        $mealTotal = floatval($this->input->post('meal_total'));
+        $train_child_price = floatval($this->input->post('train_child_price'));
+        $train_adult_price = floatval($this->input->post('train_adult_price'));
+        
+        $driver_grand_total = floatval($this->input->post('driver_grand_total'));
+        $entrance_group_total = floatval($this->input->post('entrance_group_total'));
+        $entrance_child_total = floatval($this->input->post('entrance_child_total'));
+        $entrance_adult_total = floatval($this->input->post('entrance_adult_total'));
+
+        $transport = $transport - $discount_bundle_price;
+
+        // Calculate hotel cost from JSON with nested structure
+        $hotel_total = 0;
+        if (!empty($hotel_data)) {
+            $hotel_array = json_decode($hotel_data, true);
+            
+            if (is_array($hotel_array)) {
+                // Recursive function to sum all numeric values in nested arrays
+                function sumHotelValues($array) {
+                    $total = 0;
+                    
+                    foreach ($array as $value) {
+                        if (is_array($value)) {
+                            $total += sumHotelValues($value);
+                        } elseif (is_string($value)) {
+                            // Check for patterns like "Single Occupancy__190000"
+                            if (strpos($value, '__') !== false) {
+                                $parts = explode('__', $value);
+                                $price = end($parts);
+                                $total += floatval($price);
+                            }
+                        }
+                    }
+                    
+                    return $total;
+                }
+                
+                $hotel_total = sumHotelValues($hotel_array);
+            }
+        }
+
+        // Calculate totals
+        $tickets_total = $ticket_adult + $ticket_group + $ticket_child;
+        $activities_total = $activities_adult + $activities_child + $activities_group;
+        $entrance_total = $entrance_adult_total + $entrance_child_total + $entrance_group_total;
+
+        $mandatory_total = $child_mandatory_grand_total + $adult_mandatory_grand_total;
+        
+        // Calculate overall total
+        $overall_total = $hotel_total + $transport + $tickets_total + $activities_total 
+                        + $mandatory_total + $guide_total + $mealTotal + $train_child_price + $train_adult_price + $driver_grand_total + $entrance_total;
+
+        // Prepare data for insertion
+        $log_data = array(
+            'enquiry_id' => $enquiry_id,
+            'hotel' => $hotel_total,
+            'transport' => $transport,
+            'tickets' => $tickets_total,
+            'activities' => $activities_total,
+            'mandatory_total' => $mandatory_total,
+            'guide_total' => $guide_total,
+            'meal_total' => $mealTotal,
+            'train_transfer_adult_cost' => $train_adult_price,
+            'train_transfer_child_cost' => $train_child_price,
+            'transport_discount' => $discount_bundle_price,
+            'driver_total' => $driver_grand_total,
+            'entrance_total' => $entrance_total,
+            'overall_total' => $overall_total,
+            'roe' => $roe,
+            'created_by' => $this->session->userdata('id'),
+        );
+
+        // Save to database
+        $result = $this->db->insert('quotation_log', $log_data);
+        $id = $this->db->insert_id();
+
+        echo json_encode(array(
+            'success' => $result,
+            'message' => $result ? 'Quotation log saved successfully' : 'Failed to save quotation log',
+            'hotel_total' => $hotel_total,
+            'overall_total' => $overall_total,
+            'roe' => $roe,
+            'id' => $id,
+        ));
+    }
+
+
+    public function generate_otp() 
+    {
+        // Get data from POST request
+        $user_id = $this->input->post('user_id');
+        $module_type = 'price_update';
+        $reference_id = $this->input->post('reference_id');
+        $email = $this->input->post('email');
+        
+        // Generate 6-digit OTP
+        $otp_code = mt_rand(100000, 999999);
+        
+        // Set expiration (e.g., 10 minutes from now)
+        $expires_at = date('Y-m-d H:i:s', strtotime('+10 minutes'));
+        
+        // Save OTP to database - verified should be 'no' not 0
+        $otp_data = array(
+            'user_id' => $user_id,
+            'module_type' => $module_type,
+            'reference_id' => $reference_id,
+            'otp_code' => $otp_code,
+            'email' => $email,
+            'verified' => 'no', // CHANGED: 'no' not 0
+            'expires_at' => $expires_at,
+            'created_at' => date('Y-m-d H:i:s')
+        );
+        
+        $this->db->insert('otp_verifications', $otp_data);
+        $otp_id = $this->db->insert_id();
+        
+        // Send OTP via email
+        $this->send_otp_email($email, $otp_code);
+        
+        // Return response
+        echo json_encode(array(
+            'success' => true,
+            'otp_id' => $otp_id,
+            'message' => 'OTP sent successfully'
+        ));
+    }
+
+    private function send_otp_email($email, $otp_code) 
+    {
+        // Configure SendinBlue API
+        //$api_key = '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'; // Get from SendinBlue dashboard
+        
+        // 3rd Sep 2026 CTO
+        $api_key = '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'; // Get from SendinBlue dashboard
+        
+        
+        
+        //End
+        
+        $sender_name = 'Kazin DMC';
+        $sender_email = 'info@kazindmc.com';
+        $user_name = $this->session->userdata('name') ?? 'User';
+        
+        // Prepare email data
+        $email_data = array(
+            'sender' => array(
+                'name' => $sender_name,
+                'email' => $sender_email
+            ),
+            'to' => array(
+                array(
+                    'email' => $email,
+                    'name' => 'User'
+                )
+            ),
+            'subject' => 'OTP Confirmation тАУ Difference in Quotation vs CRM Costing',
+            'htmlContent' => '
+                <div style="font-family: Arial, sans-serif; background-color:#f4f6f8; padding:20px;">
+                    
+                    <div style="max-width:600px; margin:auto; background:#ffffff; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+                        
+                        <!-- Header -->
+                        <div style="background:#2c3e50; color:#ffffff; padding:15px 20px;">
+                            <h2 style="margin:0;">Kazin DMC</h2>
+                        </div>
+                        
+                        <!-- Body -->
+                        <div style="padding:20px; color:#333;">
+                            
+                            <p style="margin-bottom:15px;">Dear <strong>' . htmlspecialchars($user_name) . '</strong>,</p>
+
+                            <p style="margin-bottom:15px;">
+                                We would like to inform you that there is a discrepancy between the updated/shared quotation and the costing generated in the CRM system.
+                            </p>
+
+                            <p style="margin-bottom:15px;">
+                                Kindly review the details and confirm your approval by using the One-Time Password (OTP) provided below:
+                            </p>
+
+                            <!-- OTP Box -->
+                            <div style="text-align:center; margin:25px 0;">
+                                <span style="
+                                    display:inline-block;
+                                    padding:12px 25px;
+                                    font-size:22px;
+                                    letter-spacing:4px;
+                                    font-weight:bold;
+                                    color:#2c3e50;
+                                    background:#ecf0f1;
+                                    border-radius:6px;
+                                ">
+                                    ' . htmlspecialchars($otp_code) . '
+                                </span>
+                            </div>
+
+                            <p style="margin-bottom:10px;">
+                                <strong>Note:</strong> This OTP is valid for 10 minutes.
+                            </p>
+
+                            <p style="margin-bottom:20px;">
+                                If you did not request this verification, please ignore this email.
+                            </p>
+
+                            <p>
+                                Regards,<br>
+                                <strong>Kazin DMC Team</strong>
+                            </p>
+                        </div>
+
+                        <!-- Footer -->
+                        <div style="background:#f1f1f1; padding:15px; text-align:center; font-size:12px; color:#777;">
+                            ┬й ' . date('Y') . ' Kazin DMC. All rights reserved.
+                        </div>
+
+                    </div>
+
+                </div>
+                '
+        );
+        
+        // Send via SendinBlue API
+        $ch = curl_init();
+        
+        curl_setopt($ch, CURLOPT_URL, 'https://api.sendinblue.com/v3/smtp/email');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($email_data));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'Content-Type: application/json',
+            'api-key: ' . $api_key
+        ));
+        
+        $result = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        // Log the response for debugging
+        error_log("SendinBlue API Response: " . $result);
+        
+        return ($http_code == 201);
+    }
+
+    public function verify_otp() 
+    {
+        // Get POST data
+        $otp_id = $this->input->post('otp_id');
+        $otp_code = $this->input->post('otp_code');
+        $user_id = $this->input->post('user_id');
+        // print_R($user_id);
+        // print_R($otp_id);
+        // print_R($otp_code);
+        // exit;
+        
+        // Validate inputs
+        if (empty($otp_id) || empty($otp_code) || empty($user_id)) {
+            echo json_encode(array(
+                'success' => false,
+                'message' => 'Invalid verification request'
+            ));
+            return;
+        }
+
+        // CORRECTED: Check for 'no' instead of 0
+        $this->db->where('id', $otp_id);
+        $this->db->where('user_id', $user_id);
+        $this->db->where('otp_code', $otp_code);
+        $this->db->where('verified', 'no');
+        $this->db->where('expires_at >', date('Y-m-d H:i:s'));
+        $query = $this->db->get('otp_verifications');
+        
+        if ($query->num_rows() > 0) {
+            $otp_record = $query->row();
+            
+            // Mark OTP as verified - use 'yes' not 1
+            $this->db->where('id', $otp_id);
+            $this->db->update('otp_verifications', array(
+                'verified' => 'yes',
+            ));
+            
+            echo json_encode(array(
+                'success' => true,
+                'message' => 'OTP verified successfully'
+            ));
+        } else {
+            // Check specific reason for failure
+            $this->db->where('id', $otp_id);
+            $this->db->where('user_id', $user_id);
+            $record = $this->db->get('otp_verifications')->row();
+            
+            if (!$record) {
+                $message = 'OTP not found';
+            } elseif ($record->verified == 'yes') { // CHANGED: 'yes' not 1
+                $message = 'OTP already used';
+            } elseif (strtotime($record->expires_at) <= time()) {
+                $message = 'OTP has expired';
+            } else {
+                $message = 'Invalid OTP code';
+            }
+            
+            echo json_encode(array(
+                'success' => false,
+                'message' => $message
+            ));
+        }
+    }
+    
+     public function fetch_similar_quotes() 
+    {
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+        }
+        
+        $this->output->set_content_type('application/json');
+        $enquiry_abbr = $this->input->post('enquiry_abbr', TRUE);
+        $roe = $this->input->post('roe', TRUE);
+        $origin_city = $this->input->post('origin_city', TRUE);
+        $arrival_city = $this->input->post('arrival_city', TRUE);
+        $arrival_time = $this->input->post('arrival_time', TRUE);
+        $departing_time = $this->input->post('departing_time', TRUE);
+        $late_checkout = $this->input->post('late_checkout', TRUE);
+        $early_checkin = $this->input->post('early_checkin', TRUE);
+        $adults_num = $this->input->post('adults_num', TRUE);
+        $child_num = $this->input->post('child_num', TRUE);
+        $no_of_nights = $this->input->post('no_of_nights', TRUE);
+        $city_names = $this->input->post('city_names', TRUE);
+        
+        // if (empty($origin_city)) {
+        //     echo json_encode([
+        //         'status' => 'error',
+        //         'message' => 'Origin city is required'
+        //     ]);
+        //     return;
+        // }
+        $this->load->model('admin/quotation_model');
+        $similar_quotes = $this->quotation_model->get_similar_quotes($enquiry_abbr, $roe, $origin_city, $arrival_city, $arrival_time, $departing_time, $early_checkin, $late_checkout, $adults_num, $child_num, $no_of_nights, $city_names);
+        
+        if (!empty($similar_quotes)) {
+            echo json_encode([
+                'status' => 'success',
+                'data' => $similar_quotes
+            ]);
+        } else {
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'No similar quotes found'
+            ]);
+        }
+    }
+    
+    public function get_entrance_options(){
+        $site_id = $this->input->post('site_id');
+        $select = 'site_entrance_costs.*';
+        $where = 'site_entrance_costs.status="active" AND site_entrance_costs.sites_id = '.$site_id;
+    	$site_activities = $this->common_model->get_data('site_entrance_costs','', '', $select,$where,'', $count = false);
+        echo json_encode(['response' => 's', 'details' => $site_activities, 'msg' => '']);
+        exit;
+    }
+    
+     public function generate_itinerary()
+    {
+        $check_in_time = $this->input->post('arrival_time');
+        $check_out_time = $this->input->post('departure_time');
+        $check_in_date = $this->input->post('check_in');
+        $check_out_date = $this->input->post('check_out');
+
+        $this->db->where('city', 'Almaty');
+        $this->db->where('category', 'sitescene');
+        $query = $this->db->get('sites'); 
+        $sites = $query->result_array();
+
+        if (empty($sites)) {
+            echo "No sites found in the database.";
+            return;
+        }
+
+        $siteDescriptions = array_map(function($site) {
+            return $site['id'] . '. ' . $site['site_name'] . 
+            ' (Duration: ' . $site['duration_hours'] . 'h, Days: ' . $site['days_of_operation'] . 
+            ', Location ID: ' . $site['location_ids'] . ', Start Time: ' . $site['departing_time_from_hotel'] .
+            ', Entry Fee: ' . $site['entry_ticket_fee'] . ', Child Fee: ' . $site['child_entry_ticket_fee'] . ')';
+        }, $sites);
+        $siteList = implode(", ", $siteDescriptions);
+
+        $start = new DateTime($check_in_date);
+        $end = new DateTime($check_out_date);
+        $end->modify('+1 day'); // include checkout day
+        $interval = new DateInterval('P1D');
+        $dateRange = new DatePeriod($start, $interval, $end);
+
+        $days = [];
+        foreach ($dateRange as $index => $date) {
+            $dayNum = $index + 1;
+            $dayName = $date->format('l'); // Monday, Tuesday etc
+            $dateStr = $date->format('Y-m-d');
+            $days[] = [
+                'day' => $dayNum,
+                'date' => $dateStr,
+                'day_name' => $dayName
+            ];
+        }
+
+        $dayConditions = [];
+        foreach ($days as $day) {
+            if ($day['day'] === 1 || $day['day'] === count($days)) {
+                $dayConditions[] = "Day {$day['day']} ({$day['date']}) is for location_id = 0 (inside city only)";
+            } else {
+                $dayConditions[] = "Day {$day['day']} ({$day['date']}) allows 1 site with location_id != 0 (outside city) first, then location_id = 0 if time remains.";
+            }
+        }
+
+        $dayLogic = implode("\n- ", $dayConditions);
+        
+        $prompt = <<<EOD
+        You are a travel itinerary planner for tourists visiting Kazakhstan.
+
+        Generate a JSON itinerary using the following site list:
+        $siteList
+
+        Constraints:
+
+        1. **Travel Dates**:
+        - Check-in: $check_in_date at $check_in_time
+        - Check-out: $check_out_date at $check_out_time
+
+        2. **General Rules**:
+        - Activities must not overlap.
+        - Insert a **1-hour rest gap** between activities.
+        - Include `departing_time_from_hotel`, `start_time`, `end_time`, and `duration_hours` in each activity.
+            - Each activity must start at or after departing_time_from_hotel, which is the same as start_time
+            - No activity should begin before start_time.
+
+        3. **Day 1 (Arrival Day)**:
+        - If check-in time is after 17:00 (5:00 PM), skip Day 1 entirely тАФ no activity should be scheduled.
+        - If check-in time is before 08:00 AM, start the first activity from **10:00 AM** onward.
+        - If check-in time is between 08:00 and 17:00:
+            - Allow Day 1 activities only if (check-in time + 2 hours) is before 22:00.
+            - First activity must start after (check-in + 2 hours).
+            - No activity should end after 22:00.
+
+
+        4. **Middle Days (Day 2 to Day N-1)**:
+        - Activities must start no earlier than **10:00 AM**.
+        - Activities must end no later than **10:00 PM**.
+
+        5. **Last Day (Checkout Day)**:
+        - If check-out time is before 15:00 (3:00 PM), do not schedule any activities on the last day. Skip Last Day completely.
+        - If check-out time is **at or after 15:00 (3:00 PM)**:
+            - Activities may be scheduled only if they can **end at least 5 hours before check-out time**.
+            - No activity should end later than **(check-out time - 5 hours)**.
+
+        6. **Day Tagging**:
+        - Include `day`, `date`, and list of `activities` for each day.
+        - Ensure dates are sequential from check-in to check-out.
+
+        - $dayLogic
+
+        Output format: JSON array. Each object must have:
+
+        ```json
+        {
+        "day": 1,
+        "date": "YYYY-MM-DD",
+        "activities": [
+            {
+            "id": 0,
+            "site_name": "...",
+            "start_time": "HH:MM",
+            "end_time": "HH:MM",
+            "duration_hours": 0,
+            "departing_time_from_hotel": "HH:MM",
+            "entry_ticket_fee": 0,
+            "child_entry_ticket_fee": 0,
+            "day_of_operation_used": "Monday"
+            }
+        ]
+        }
+        EOD;
+        $apiKey = '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';
+
+        // $apiKey = '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';
+        $endpoint = 'https://api.openai.com/v1/chat/completions';
+
+        $postData = [
+            'model' => 'gpt-4o-mini',
+            'messages' => [
+                ['role' => 'system', 'content' => 'You are a helpful travel planner. Respond only with valid JSON.'],
+                ['role' => 'user', 'content' => $prompt]
+            ],
+            'temperature' => 0.7
+        ];
+
+        $headers = [
+            'Content-Type: application/json',
+            'Authorization: ' . 'Bearer ' . $apiKey
+        ];
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $endpoint);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        $result = json_decode($response, true);
+
+        if (isset($result['choices'][0]['message']['content'])) {
+            $content = $result['choices'][0]['message']['content'];
+
+            $cleaned = trim($content);
+            $cleaned = preg_replace('/^```(json)?/i', '', $cleaned); 
+            $cleaned = preg_replace('/```$/', '', $cleaned);       
+            $cleaned = str_replace(['тАЬ', 'тАЭ'], '"', $cleaned);
+
+            $itinerary = json_decode($cleaned, true);
+
+            if (json_last_error() === JSON_ERROR_NONE) 
+            {
+                header('Content-Type: application/json');
+                echo json_encode($itinerary);
+            } else {
+                http_response_code(500);
+                echo json_encode([
+                    'error' => 'JSON parsing failed',
+                    'raw_response' => $content,
+                    'error_message' => json_last_error_msg()
+                ]);
+            }
+
+        } else {
+            echo "тЭМ Failed to generate itinerary: <pre>" . print_r($result, true) . "</pre>";
+        }
+    
+    }
+
+    public function get_saved_quotation_preview()
+    {
+        $quotation_id = $this->input->post('quotation_id');
+        $enquiry_id   = base64_decode($this->input->post('enquiry_id'));
+
+        if (empty($quotation_id)) {
+            echo json_encode([
+                'status' => false,
+                'message' => 'Quotation ID is required'
+            ]);
+            exit;
+        }
+
+        $this->db->select('id, enquiry_id, cost_table_html, itinerary_html');
+        $this->db->from('quotations');
+        $this->db->where('id', $quotation_id);
+
+        // optional safety check
+        if (!empty($enquiry_id)) {
+            $this->db->where('enquiry_id', $enquiry_id);
+        }
+
+        $quotation = $this->db->get()->row();
+
+        if (empty($quotation)) {
+            echo json_encode([
+                'status' => false,
+                'message' => 'Saved quotation not found'
+            ]);
+            exit;
+        }
+
+        echo json_encode([
+            'status' => true,
+            'cost_table_html' => $quotation->cost_table_html,
+            'itinerary_html' => $quotation->itinerary_html
+        ]);
+        exit;
+    }
+
+
+    public function send_whatsapp_doc()
+    {
+        $this->output->set_content_type('application/json');
+
+        $isdCode         = trim((string) $this->input->post('isd_code', true));
+        $mobile          = trim((string) $this->input->post('mobile_number', true));
+        $html            = (string) $this->input->post('email_body_html');
+        $posted_agent    = trim((string) $this->input->post('agent_name', true));
+        $destination     = trim((string) $this->input->post('destination', true));
+        $posted_query_no = trim((string) $this->input->post('enquiry_id', true));
+
+        if ($isdCode === '' || $mobile === '' || $html === '') {
+            return $this->output->set_output(json_encode([
+                'status'  => 'error',
+                'success' => false,
+                'message' => 'ISD code, mobile number and email body are required.'
+            ]));
+        }
+
+        if ($posted_agent === '') {
+            $posted_agent = 'Test Agent';
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Worldwide WhatsApp mobile format
+        |--------------------------------------------------------------------------
+        */
+
+        $isdCode = preg_replace('/[^0-9]/', '', $isdCode);
+
+        $enteredMobile = preg_replace(
+            '/[^0-9]/',
+            '',
+            $mobile
+        );
+
+        $enteredMobile = ltrim($enteredMobile, '0');
+
+        if ($isdCode === '' || $enteredMobile === '') {
+            return $this->output->set_output(json_encode([
+                'status'  => 'error',
+                'success' => false,
+                'message' => 'Please select ISD code and enter a valid mobile number.'
+            ]));
+        }
+
+        /*
+        * Full international number already pasted ho to
+        * ISD code dobara prepend nahi hoga.
+        */
+        if (
+            strpos($enteredMobile, $isdCode) === 0 &&
+            strlen($enteredMobile) >= 8
+        ) {
+            $mobile = $enteredMobile;
+        } else {
+            $mobile = $isdCode . $enteredMobile;
+        }
+
+        if (!preg_match('/^[1-9][0-9]{7,14}$/', $mobile)) {
+            return $this->output->set_output(json_encode([
+                'status'  => 'error',
+                'success' => false,
+                'message' => 'Please enter a valid international mobile number.'
+            ]));
+        }
+
+        /*
+        * Document directory.
+        * This folder must be publicly accessible.
+        */
+        $temp_dir = FCPATH . 'email_body_doc' . DIRECTORY_SEPARATOR;
+
+        if (!is_dir($temp_dir)) {
+            if (!mkdir($temp_dir, 0775, true)) {
+                return $this->output->set_output(json_encode([
+                    'status'  => 'error',
+                    'success' => false,
+                    'message' => 'Unable to create document directory.'
+                ]));
+            }
+        }
+
+        $this->db->where('id', $posted_query_no);
+        $query = $this->db->get('enquiry');
+
+        $enquiry_data = $query->row_array();
+        // $last_query   = $this->db->last_query();
+        $enquiry_no  = $enquiry_data['enquiry_no'];
+
+        $this->db->where('id', $enquiry_data['file_handle_by']);
+        $file_handle_data = $this->db->get('admin');
+        
+
+        $file_handle_data = $file_handle_data->row_array();
+
+        $this->db->where('id', $enquiry_data['sales_admin_id']);
+        $sales_user_data = $this->db->get('admin');
+        $sales_user_data = $sales_user_data->row_array();
+
+        /*
+        * Unique filename to avoid collision.
+        */
+        $filename = $enquiry_no . '-' . date('Ymd_His') . '_' . uniqid() . '.doc';
+        $filepath = $temp_dir . $filename;
+
+        /*
+        * Build Word document.
+        */
+        $docContent = $this->build_word_document($html);
+
+        $saved_bytes = file_put_contents($filepath, $docContent);
+
+        if ($saved_bytes === false) {
+            return $this->output->set_output(json_encode([
+                'status'  => 'error',
+                'success' => false,
+                'message' => 'Failed to save Word document.'
+            ]));
+        }
+
+        $word_file_url = base_url(
+            'email_body_doc/' . rawurlencode($filename)
+        );
+
+        /*
+        * Send saved document link through approved WhatsApp template.
+        */
+        $api_response = $this->send_whatsapp_template(
+            $mobile,
+            $word_file_url,
+            $posted_agent,
+            $destination,
+            $enquiry_data['enquiry_no'],
+            $file_handle_data['name'],
+            $file_handle_data['contact_number'],
+            $file_handle_data['email'],
+            $sales_user_data['name'],
+            $sales_user_data['contact_number'],
+            $sales_user_data['email']
+        );
+
+        if (!empty($api_response['success'])) {
+            return $this->output->set_output(json_encode([
+                'status'       => 'success',
+                'success'      => true,
+                'message'      => 'Word document link sent via WhatsApp successfully.',
+                'download_url' => $word_file_url,
+                'file_url'     => $word_file_url,
+                'filename'     => $filename,
+                'api_response' => $api_response['response'] ?? null
+            ]));
+        }
+
+        return $this->output->set_output(json_encode([
+            'status'       => 'error',
+            'success'      => false,
+            'message'      => 'WhatsApp message failed: ' .
+                ($api_response['error'] ?? 'Unknown API error'),
+            'download_url' => $word_file_url,
+            'file_url'     => $word_file_url,
+            'api_response' => $api_response['response'] ?? null
+        ]));
+    }
+
+    private function send_whatsapp_template(
+        $mobile,
+        $word_file_url,
+        $agent_name,
+        $destination,
+        $enquiry_no,
+        $file_handler_name,
+        $file_handler_mobile,
+        $file_handler_email,
+        $sales_person_name,
+        $sales_person_mobile,
+        $sales_person_email
+    ) {
+
+        $phone_number_id = '546659848533061';
+        $waba_id         = '589332984253812';
+
+        /*
+        * Pinbot dashboard mein jo exact approved template name hai,
+        * wahi yahan use karein.
+        */
+        $template_name = 'email_quotation';
+
+        /*
+        * Production mein API key config file mein rakhein.
+        */
+        $api_key = '72a056e9-e53d-11ef-bb5a-02c8a5e042bd';
+
+        $url = 'https://partnersv1.pinbot.ai/v3/'
+            . $phone_number_id
+            . '/messages';
+
+
+        $destination         = $destination;
+        $query_no            = $enquiry_no ?? 'N/A';
+        $file_handler_name   = $file_handler_name ?? '';
+        $file_handler_mobile = $file_handler_mobile ?? '';
+        $file_handler_email  = $file_handler_email ?? '';
+        $sales_person_name   = $sales_person_name ?? '';
+        $sales_person_mobile = $sales_person_mobile ?? '';
+        $sales_person_email  = $sales_person_email ?? '';
+
+        $parameters = [
+            [
+                'type' => 'text',
+                'text' => $agent_name
+            ],
+            [
+                'type' => 'text',
+                'text' => $destination
+            ],
+            [
+                'type' => 'text',
+                'text' => $query_no
+            ],
+            [
+                'type' => 'text',
+                'text' => $word_file_url
+            ],
+            [
+                'type' => 'text',
+                'text' => $file_handler_name
+            ],
+            [
+                'type' => 'text',
+                'text' => $file_handler_mobile
+            ],
+            [
+                'type' => 'text',
+                'text' => $file_handler_email
+            ],
+            [
+                'type' => 'text',
+                'text' => $sales_person_name
+            ],
+            [
+                'type' => 'text',
+                'text' => $sales_person_mobile
+            ],
+            [
+                'type' => 'text',
+                'text' => $sales_person_email
+            ]
+        ];
+
+        $payload = [
+            'messaging_product' => 'whatsapp',
+            'recipient_type'    => 'individual',
+            'to'                => $mobile,
+            'type'              => 'template',
+
+            'template' => [
+                'name' => $template_name,
+
+                'language' => [
+                    'code' => 'en'
+                ],
+
+                'components' => [
+                    [
+                        'type'       => 'body',
+                        'parameters' => $parameters
+                    ]
+                ]
+            ]
+        ];
+
+        $headers = [
+            'apikey: ' . $api_key,
+            'wabaid: ' . $waba_id,
+            'phone_number_id: ' . $phone_number_id,
+            'Content-Type: application/json',
+            'Accept: application/json'
+        ];
+
+        $ch = curl_init();
+
+        curl_setopt_array($ch, [
+            CURLOPT_URL            => $url,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode(
+                $payload,
+                JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+            ),
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_TIMEOUT        => 30
+        ]);
+
+        $response   = curl_exec($ch);
+        $curl_error = curl_error($ch);
+        $http_code  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+        curl_close($ch);
+
+        if ($curl_error !== '') {
+            return [
+                'success' => false,
+                'error'   => 'cURL error: ' . $curl_error,
+                'response' => null
+            ];
+        }
+
+        $decoded_response = json_decode($response, true);
+
+        if ($http_code >= 200 && $http_code < 300) {
+            return [
+                'success'   => true,
+                'http_code' => $http_code,
+                'response'  => $decoded_response ?: $response
+            ];
+        }
+
+        $error_message = 'HTTP Error ' . $http_code;
+
+        if (
+            is_array($decoded_response) &&
+            !empty($decoded_response['error']['message'])
+        ) {
+            $error_message = $decoded_response['error']['message'];
+        } elseif (
+            is_array($decoded_response) &&
+            !empty($decoded_response['message'])
+        ) {
+            $error_message = $decoded_response['message'];
+        } elseif (!empty($response)) {
+            $error_message = $response;
+        }
+
+        return [
+            'success'   => false,
+            'http_code' => $http_code,
+            'error'     => $error_message,
+            'response'  => $decoded_response ?: $response
+        ];
+    }
+
+    private function build_word_document($html)
+    {
+        // Extract the email's <style> content
+        $email_styles = '';
+        if (preg_match('/<style[^>]*>(.*?)<\/style>/is', $html, $matches)) {
+            $email_styles = $matches[1];
+        }
+    
+        // Extract the email's <body> content
+        $body_content = '';
+        if (preg_match('/<body[^>]*>(.*?)<\/body>/is', $html, $matches)) {
+            $body_content = $matches[1];
+        } else {
+            $body_content = $html;
+        }
+    
+        // Remove any outer <html>, <head> that may remain inside body
+        $body_content = preg_replace('/<html[^>]*>/i', '', $body_content);
+        $body_content = preg_replace('/<\/html>/i', '', $body_content);
+        $body_content = preg_replace('/<head[^>]*>.*?<\/head>/is', '', $body_content);
+        $body_content = preg_replace('/<body[^>]*>/i', '', $body_content);
+        $body_content = preg_replace('/<\/body>/i', '', $body_content);
+    
+        // Build Word document тАУ combine email styles + Word overrides
+        $doc = '<html xmlns:v="urn:schemas-microsoft-com:vml"
+                    xmlns:o="urn:schemas-microsoft-com:office:office"
+                    xmlns:w="urn:schemas-microsoft-com:office:word"
+                    xmlns:m="http://schemas.microsoft.com/office/2004/12/omml"
+                    xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+            <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+            <meta name="ProgId" content="Word">
+            <meta name="Generator" content="Microsoft Word 15">
+            <meta name="Originator" content="Microsoft Word 15">
+            <!--[if gte mso 9]>
+            <xml>
+                <w:WordDocument>
+                    <w:View>Print</w:View>
+                    <w:Zoom>100</w:Zoom>
+                    <w:DoNotOptimizeForBrowser/>
+                </w:WordDocument>
+            </xml>
+            <![endif]-->
+            <style>
+                /* ---------- WORD PAGE SETUP ---------- */
+                @page {
+                
+                  
+                        margin:0;  
+                size: 8.5in 11.0in;
+                    
+                     
+                   /*  mso-page-orientation: portrait;*/
+                }
+                
+                @page WordSection1 {
+                    size:8.5in 11in;
+                    margin:0.2in 0.2in 0.2in 0.2in;
+                }
+
+                div.WordSection1 {
+                    page:WordSection1;
+                }
+
+                body{
+                    margin:0;
+                    padding:0;
+                }
+                
+
+                .doc-table>img{align:right;}
+    
+                body {
+                    font-family: "Calibri", "Arial", sans-serif;
+                    font-size: 8pt;
+                    line-height: 1.3;
+                    color: #000000;
+                    background: #ffffff;
+                }
+                
+                
+    
+                /* ---------- EMAILтАЩS ORIGINAL STYLES ---------- */
+                ' . $email_styles . '
+    
+                /* ---------- WORD OVERRIDES (fix table borders, images) ---------- */
+              
+                
+                table {
+                     font-size: 8pt;
+                    word-wrap: break-word;
+                    overflow-wrap: break-word;
+                    border-collapse: collapse;
+                    width: 100% !important;
+                    table-layout: fixed;
+                    mso-table-lspace:0pt;
+                    mso-table-rspace:0pt;
+                }
+                table.doc-table{
+                width:100% !important;
+                border-collapse:collapse;
+                mso-table-layout-alt:fixed;
+                }
+                
+                .camera-icon{
+                    width:14px !important;
+                    height:12px !important;
+                    max-width:15px !important;
+               
+                    display:inline-block;
+                }
+    
+
+    
+                th {
+                    background-color: #d6d8d9;
+                    font-weight: bold;
+                    text-align: left;
+                }
+    
+                /* Resize images */
+                img {
+                    max-width: 80% !important;
+                    height: auto !important;
+                }
+                img[src="camera_icon.png"] {
+                    width:auto;
+                    max-width: 14px !important;
+                    height: 12px !important;
+                }
+                td img, th img {
+                    max-width: 100% !important;
+                    height: auto !important;
+                }
+    
+                /* Hide buttons and interactive elements */
+                .btn-container { display: none; }
+            </style>
+            <!--[if gte mso 9]>
+            <xml>
+                <w:LatentStyles DefLockedState="false" DefUnhideWhenUsed="false"
+                    DefSemiHidden="false" DefQFormat="false" DefPriority="99"
+                    LatentStyleCount="376">
+                    <w:LsdException Locked="false" Priority="0" QFormat="true" Name="Normal"/>
+                    <w:LsdException Locked="false" Priority="9" QFormat="true" Name="heading 1"/>
+                </w:LatentStyles>
+            </xml>
+            <![endif]-->
+        </head>
+        <body>
+        <div class="WordSection1">
+            ' . $body_content . '
+            </div>
+        </body>
+        </html>';
+    
+        return $doc;
+    }
+
+//   public function additionalActivities($country)
+// {
+//     $this->db->where('country', $country);
+//     $this->db->where('status', 'active');
+//     $this->db->where('category', 'activity');
+//     $this->db->order_by('created', 'DESC');
+//     $data['activities'] = $this->db->get('sites')->result();
+//     // echo'<pre>';print_r($data['activities']);die;
+//     $data['country'] = $country;
+
+//     $this->load->view('admin/additional_activities', $data);
+// }
+
+}

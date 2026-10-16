@@ -1,0 +1,6 @@
+S. No.,Id,Vehicle Name,Vehicle Type,Transport Id,Sites Id,Location Id,Location,Country,Supplement Charges,Currency
+1,2,63(Big Bus),Bus,11,212,"""2""",Kolsai Lake Surroundings,Kazakhstan,5500,tenge
+2,3,63(Big Bus),Bus,11,213,"""2,3""",Kolsai Lake Surroundings + Mountain Lake,Kazakhstan,7500,tenge
+3,,63(Big Bus),Bus,11,37,"""2""",,Kazakhstan,,tenge
+4,,63(Big Bus),Bus,11,43,"""2""",,Kazakhstan,,tenge
+5,,63(Big Bus),Bus,11,222,"""2,3""",Kolsai Lake Surroundings + Mountain Lake,Kazakhstan,,tenge

@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <!-- Tell the browser to be responsive to screen width -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <!-- Favicon icon -->
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/images/login-logo.png">
+    <title>Admin dashboard</title>
+    <!-- This page CSS -->
+
+    <link href="dist/css/pages/login-register-lock.css" rel="stylesheet">
+    <!-- chartist CSS -->
+    <link href="assets/node_modules/morrisjs/morris.css" rel="stylesheet">
+    <!--Toaster Popup message CSS -->
+    <link href="assets/node_modules/toast-master/css/jquery.toast.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link href="dist/css/style.min.css" rel="stylesheet">
+    <!-- Dashboard 1 Page CSS -->
+    <link href="dist/css/pages/dashboard1.css" rel="stylesheet">
+    <link rel="stylesheet" href="dist/css/extra.css">
+    <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+
+    <style>
+        .only-for-dashbord {
+            display: flex;
+            justify-content: end;
+            align-items: center;
+        }
+
+        .only-for-dashbord ul {
+            display: flex;
+            margin-bottom: 0;
+            column-gap: 20px;
+        }
+
+        .only-for-dashbord ul li {
+            list-style: none !important;
+        }
+
+        .only-for-dashbord ul li a {
+            color: #005559;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+
+        @media screen and (max-width:991px) {
+            .only-for-dashbord {
+                justify-content: center;
+                padding-top: 13px;
+                margin-top: 8px;
+                order: 2;
+                border-top: solid 14px #ecf0f4;
+            }
+
+            .only-for-dashbord ul {
+                padding: 0 !important;
+            }
+        }
+
+        @media screen and (max-width:575px) {
+            .only-for-dashbord ul {
+                justify-content: space-between;
+                width: 80%;
+
+            }
+
+            .only-for-dashbord ul li a {
+                font-size: 12px;
+                font-weight: 600;
+            }
+
+            .only-for-dashbord ul li a span {
+                width: 100%;
+                display: block;
+                margin-top: 13px;
+            }
+        }
+
+        @media screen and (max-width:575px) {
+
+            .only-for-dashbord ul li a {
+                font-size: 12px;
+                font-weight: 600;
+            }
+
+            .only-for-dashbord ul {
+                justify-content: space-between;
+                width: 95%;
+            }
+        }
+
+        @media screen and (max-width:479px) {
+            .only-for-dashbord ul li a img {
+                max-width: 80px !important;
+            }
+        }
+    </style>
+
+
+
+
+</head>
+
+<body class="skin-megna fixed-layout">
+
+
+    <div id="main-wrapper">
+
+        <header class="topbar">
+            <nav class="navbar top-navbar navbar-expand-md navbar-dark">
+                <!-- ============================================================== -->
+                <!-- Logo -->
+                <!-- ============================================================== -->
+                <div class="navbar-header" style="line-height: 67px;">
+                    <a class="navbar-brand" href="">
+                        <!-- Logo icon --><b>
+                            <!--You can put here icon as well // <i class="wi wi-sunset"></i> //-->
+                            <!-- Dark Logo icon -->
+                            <img src="assets/images/login-logo.png" alt="homepage" class="dark-logo" />
+                            <!-- Light Logo icon -->
+                            <img src="assets/images/login-logo.png" alt="homepage" class="light-logo" />
+                        </b>
+                        <!--End Logo icon -->
+                        <!-- <span class="hidden-xs"><span class="font-bold">elite</span>hospital</span> -->
+                    </a>
+                </div>
+
+                <div class="navbar-collapse">
+                    <!-- ============================================================== -->
+                    <!-- toggle and nav items -->
+                    <!-- ============================================================== -->
+                    <ul class="navbar-nav me-auto">
+                        <!-- This is  -->
+                        <li class="nav-item"> <a class="nav-link nav-toggler d-block d-md-none waves-effect waves-dark"
+                                href="javascript:void(0)"><i class="ti-menu"></i></a> </li>
+                        <li class="nav-item"> <a
+                                class="nav-link sidebartoggler d-none d-lg-block d-md-block waves-effect waves-dark"
+                                href="javascript:void(0)"><i class="icon-menu"></i></a> </li>
+                        <!-- ============================================================== -->
+                        <!-- Search -->
+                        <!-- ============================================================== -->
+                        <!-- <li class="nav-item">
+                            <form class="app-search d-none d-md-block d-lg-block">
+                                <input type="text" class="form-control" placeholder="Search & enter">
+                            </form>
+                        </li> -->
+                    </ul>
+
+                    <ul class="navbar-nav my-lg-0">
+                        <!-- ============================================================== -->
+                        <!-- Comment -->
+                        <!-- ============================================================== -->
+                        <li class="nav-item dropdown" style="display: flex;align-items: center; margin-right: 37px;">
+                            <a href="#" class="circle"></a>
+
+                        </li>
+                        <li>
+                            <h3 style="color: #fff;
+                            font-weight: 600;
+                            font-size: 22px;
+                            padding-top: 20px;">Live Tracking</h3>
+                        </li>
+
+                        <!-- ============================================================== -->
+                        <!-- User Profile -->
+                        <!-- ============================================================== -->
+                        <li class="nav-item dropdown u-pro">
+                            <a class="nav-link dropdown-toggle waves-effect waves-dark profile-pic" href=""
+                                data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><img
+                                    src="assets/images/users/user-icon.jpg" alt="user" class=""> <span
+                                    class="hidden-md-down">Sumeet Verma &nbsp;<i class="fa fa-angle-down"></i></span>
+                            </a>
+                            <div class="dropdown-menu dropdown-menu-end animated flipInY">
+                                <!-- text-->
+                                <a href="index.html" class="dropdown-item"><i class="fa fa-power-off"></i> Logout</a>
+                                <div class="dropdown-divider"></div>
+                                <!-- text-->
+
+                                <a href="javascript:void(0)" class="dropdown-item"><i class="fa fa-lock"
+                                        aria-hidden="true"></i> Change Password</a>
+                                <!-- text-->
+                            </div>
+                        </li>
+
+                    </ul>
+                </div>
+            </nav>
+        </header>
+
+        <aside class="left-sidebar">
+            <!-- Sidebar scroll-->
+            <div class="scroll-sidebar">
+                <!-- Sidebar navigation-->
+                <nav class="sidebar-nav">
+                    <ul id="sidebarnav">
+                        <li class="user-pro"> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><img src="assets/images/users/user-icon.jpg" alt="user-img" class="img-circle"><span class="hide-menu">Sumeet Verma</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="javascript:void(0)"><i class="fa fa-power-off"></i> Logout</a></li>
+                                <li><a href="javascript:void(0)"><i class="fa fa-lock" aria-hidden="true"></i> Password</a></li>
+                            </ul>
+                        </li>
+                        <li> <a class="waves-effect waves-dark" href="dashbord.html"><i class="icon-speedometer"></i><span class="hide-menu">Dashboard</span></a>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><i class="fa fa-user-friends"></i><span class="hide-menu">Users</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="#">User 1</a></li>
+                            </ul>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><i class="fa fa-database" aria-hidden="true"></i><span class="hide-menu">Database</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="#">Database 1</a></li>
+                            </ul>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><i class=" fa fa-laptop-code"></i><span class="hide-menu">Masters</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="#">Masters</a></li>
+                            </ul>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><i class="fa fa-plane" aria-hidden="true"></i><span class="hide-menu">Airlines</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="#">Airlines 1</a></li>
+                              
+                            </ul>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><i class="fa fa-hotel" aria-hidden="true"></i><span class="hide-menu">Hotels</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="#">Hotel 1</a></li>
+                            </ul>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><i class="fa fa-truck-moving" aria-hidden="true"></i><span class="hide-menu">Transportations</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="#">Bus</a></li>
+                            </ul>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><img style="filter: invert(48%);
+                            max-width: 22px;
+                            margin-right:7px;" src="assets/images/guide.png" alt=""><span class="hide-menu">Guide</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="#">Guide</a></li>
+                            </ul>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><i class="fas fa-rupee-sign"></i><span class="hide-menu">Currency</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="#">Payments</a></li>
+                            </ul>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><i class="fa fa-puzzle-piece" aria-hidden="true"></i><span class="hide-menu">Query Board</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="queryboard.html">Query Board</a></li>
+                            </ul>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><i class="fa fa-plane-arrival" aria-hidden="true"></i> <span class="hide-menu">Arrival Chart</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="#">Chart 1</a></li>
+                             
+                            </ul>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><i class="fa fa-bus" aria-hidden="true"></i><span class="hide-menu">Party Bus</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="#">Party Bus</a></li>
+                               
+                            </ul>
+                        </li>
+                        <li> <a class="has-arrow waves-effect waves-dark" href="javascript:void(0)" aria-expanded="false"><i class="fa fa-chart-bar"></i><span class="hide-menu">Reports</span></a>
+                            <ul aria-expanded="false" class="collapse">
+                                <li><a href="#">Report1</a></li>
+                                
+                            </ul>
+                        </li>
+
+                    </ul>
+                </nav>
+                <!-- End Sidebar navigation -->
+            </div>
+            <!-- End Sidebar scroll-->
+        </aside>
+
+        <div class="page-wrapper">
+            <div class="container-fluid">
+
+                <div class="row page-titles">
+                    <div class="col-lg-2 col-sm-6  col-6 align-self-center">
+                        <h4 class="text-themecolor">Dashboard</h4>
+                    </div>
+                    <div class="col-lg-8 only-for-dashbord">
+                        <ul>
+                            <li><a href="ueryboard.html"> <img style="max-width:70px;" src="assets/images/query-bord.gif"
+                                        alt=""><span>Query Board</span></a></li>
+
+                            <li><a href="#"> <img style="    max-width: 75px;margin-top: -10px;"
+                                        src="assets/images/transportation .gif" alt=""><span>Arrival Chart</span></a>
+                            </li>
+                            <li><a href="#"> <img style="  max-width: 56px;margin-right: 2px;"
+                                        src="assets/images/bus.gif" alt=""><span>Party Bus</span></a></li>
+
+
+                        </ul>
+                    </div>
+                    <div class="col-lg-2 col-sm-6 col-6 align-self-center text-end">
+                        <div class="d-flex justify-content-end align-items-center">
+                            <ol class="breadcrumb justify-content-end">
+                                <li class="breadcrumb-item"><a href="javascript:void(0)">Home</a></li>
+                                <li class="breadcrumb-item active">Dashboard</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-lg-3 col-md-12">
+                        <div class="card" style="height: 87%;">
+                            <div class="card-body">
+                                <h5 class="card-title"><img style="max-width: 28px; margin-right: 10px;"
+                                        src="assets/images/flag.png" alt="">Azerbaijan
+                                </h5>
+                                <div class="stats-row">
+                                    <div class="stat-item">
+                                        <h6>Pending
+                                        </h6>
+                                        <b>451
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>In-Progress
+                                        </h6>
+                                        <b>952
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>Confirm
+                                        </h6>
+                                        <b class="donfirm" data-content="1">311
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>Not Materialized</h6>
+                                        <b>1075
+                                        </b>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-md-12">
+                        <div class="card" style="height: 87%;">
+                            <div class="card-body">
+                                <h5 class="card-title"><img style="max-width: 28px; margin-right: 10px;"
+                                        src="assets/images/flag2.png" alt="">Belarus
+
+
+                                </h5>
+                                <div class="stats-row">
+                                    <div class="stat-item">
+                                        <h6>Pending
+                                        </h6>
+                                        <b>16
+
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>In-Progress
+                                        </h6>
+                                        <b>16
+
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>Confirm
+                                        </h6>
+                                        <b class="donfirm" data-content="0">1
+
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>Not Materialized</h6>
+                                        <b>23
+
+                                        </b>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-md-12">
+                        <div class="card" style="height: 87%;">
+                            <div class="card-body">
+                                <h5 class="card-title"><img style="max-width: 28px; margin-right: 10px;"
+                                        src="assets/images/flag3.png" alt="">Georgia
+
+                                </h5>
+                                <div class="stats-row">
+                                    <div class="stat-item">
+                                        <h6>Pending
+                                        </h6>
+                                        <b>569
+
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>In-Progress
+                                        </h6>
+                                        <b>509
+
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>Confirm
+                                        </h6>
+                                        <b class="donfirm" data-content="1">235
+
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>Not Materialized</h6>
+                                        <b>524
+
+                                        </b>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-md-12">
+                        <div class="card" style="height: 87%;">
+                            <div class="card-body">
+                                <h5 class="card-title"><img style="max-width: 28px; margin-right: 10px;"
+                                        src="assets/images/flag4.png" alt="">Kazakhstan
+
+                                </h5>
+                                <div class="stats-row">
+                                    <div class="stat-item">
+                                        <h6>Pending
+                                        </h6>
+                                        <b>333
+
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>In-Progress
+                                        </h6>
+                                        <b>2322
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>Confirm
+                                        </h6>
+                                        <b class="donfirm" data-content="0">772
+
+                                        </b>
+                                    </div>
+                                    <div class="stat-item">
+                                        <h6>Not Materialized</h6>
+                                        <b>2201
+                                        </b>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+                <!-- /.row -->
+                <!--row -->
+                <div class="row">
+                    <div class="col-md-6 col-lg-6 col-sm-12 col-xs-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Query Board</h5>
+                                <img style="width: 100%;" src="assets/images/chart2.png" alt="">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6 col-lg-6 col-sm-12 col-xs-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Arrival Chart</h5>
+                                <img style="width: 100%;" src="assets/images/chart2.png" alt="">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- row -->
+
+                <div class="right-sidebar">
+                    <div class="slimscrollright">
+                        <div class="rpanel-title"> Service Panel <span><i class="ti-close right-side-toggle"></i></span>
+                        </div>
+                        <div class="r-panel-body">
+                            <ul id="themecolors" class="m-t-20">
+                                <li><b>With Light sidebar</b></li>
+                                <li><a href="javascript:void(0)" data-skin="skin-default" class="default-theme">1</a>
+                                </li>
+                                <li><a href="javascript:void(0)" data-skin="skin-green" class="green-theme">2</a></li>
+                                <li><a href="javascript:void(0)" data-skin="skin-red" class="red-theme">3</a></li>
+                                <li><a href="javascript:void(0)" data-skin="skin-blue" class="blue-theme">4</a></li>
+                                <li><a href="javascript:void(0)" data-skin="skin-purple" class="purple-theme">5</a></li>
+                                <li><a href="javascript:void(0)" data-skin="skin-megna"
+                                        class="megna-theme working">6</a></li>
+                                <li class="d-block m-t-30"><b>With Dark sidebar</b></li>
+                                <li><a href="javascript:void(0)" data-skin="skin-default-dark"
+                                        class="default-dark-theme ">7</a></li>
+                                <li><a href="javascript:void(0)" data-skin="skin-green-dark"
+                                        class="green-dark-theme">8</a></li>
+                                <li><a href="javascript:void(0)" data-skin="skin-red-dark" class="red-dark-theme">9</a>
+                                </li>
+                                <li><a href="javascript:void(0)" data-skin="skin-blue-dark"
+                                        class="blue-dark-theme">10</a></li>
+                                <li><a href="javascript:void(0)" data-skin="skin-purple-dark"
+                                        class="purple-dark-theme">11</a></li>
+                                <li><a href="javascript:void(0)" data-skin="skin-megna-dark"
+                                        class="megna-dark-theme ">12</a></li>
+                            </ul>
+                            <ul class="m-t-20 chatonline">
+                                <li><b>Chat option</b></li>
+                                <li>
+                                    <a href="javascript:void(0)"><img src="assets/images/users/1.jpg" alt="user-img"
+                                            class="img-circle"> <span>Varun Dhavan <small
+                                                class="text-success">online</small></span></a>
+                                </li>
+                                <li>
+                                    <a href="javascript:void(0)"><img src="assets/images/users/2.jpg" alt="user-img"
+                                            class="img-circle"> <span>Genelia Deshmukh <small
+                                                class="text-warning">Away</small></span></a>
+                                </li>
+                                <li>
+                                    <a href="javascript:void(0)"><img src="assets/images/users/3.jpg" alt="user-img"
+                                            class="img-circle"> <span>Ritesh Deshmukh <small
+                                                class="text-danger">Busy</small></span></a>
+                                </li>
+                                <li>
+                                    <a href="javascript:void(0)"><img src="assets/images/users/4.jpg" alt="user-img"
+                                            class="img-circle"> <span>Arijit Sinh <small
+                                                class="text-muted">Offline</small></span></a>
+                                </li>
+                                <li>
+                                    <a href="javascript:void(0)"><img src="assets/images/users/5.jpg" alt="user-img"
+                                            class="img-circle"> <span>Govinda Star <small
+                                                class="text-success">online</small></span></a>
+                                </li>
+                                <li>
+                                    <a href="javascript:void(0)"><img src="assets/images/users/6.jpg" alt="user-img"
+                                            class="img-circle"> <span>John Abraham<small
+                                                class="text-success">online</small></span></a>
+                                </li>
+                                <li>
+                                    <a href="javascript:void(0)"><img src="assets/images/users/7.jpg" alt="user-img"
+                                            class="img-circle"> <span>Hritik Roshan<small
+                                                class="text-success">online</small></span></a>
+                                </li>
+                                <li>
+                                    <a href="javascript:void(0)"><img src="assets/images/users/8.jpg" alt="user-img"
+                                            class="img-circle"> <span>Pwandeep rajan <small
+                                                class="text-success">online</small></span></a>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <!-- ============================================================== -->
+                <!-- End Right sidebar -->
+                <!-- ============================================================== -->
+            </div>
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <footer class="footer">
+            © 2024 Kazin
+            <a href="#">Kazin</a>
+        </footer>
+
+    </div>
+
+    <script src="assets/node_modules/jquery/dist/jquery.min.js"></script>
+
+    <script src="assets/node_modules/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="dist/js/perfect-scrollbar.jquery.min.js"></script>
+    <script src="dist/js/waves.js"></script>
+    <script src="dist/js/sidebarmenu.js"></script>
+    <script src="dist/js/custom.min.js"></script>
+    <script src="assets/node_modules/raphael/raphael-min.js"></script>
+    <script src="assets/node_modules/morrisjs/morris.min.js"></script>
+    <script src="assets/node_modules/jquery-sparkline/jquery.sparkline.min.js"></script>
+    <script src="assets/node_modules/toast-master/js/jquery.toast.js"></script>
+    <script src="assets/node_modules/peity/jquery.peity.min.js"></script>
+    <script src="assets/node_modules/peity/jquery.peity.init.js"></script>
+    <script src="dist/js/dashboard1.js"></script>
+
+    <script type="text/javascript">
+        // ============================================================== 
+        // Login and Recover Password 
+        // ============================================================== 
+        $('#to-recover').on("click", function () {
+            $("#loginform").slideUp();
+            $("#recoverform").fadeIn();
+        });
+    </script>
+</body>
+
+</html>

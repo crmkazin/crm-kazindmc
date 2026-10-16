@@ -1,0 +1,644 @@
+<!-- old -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta content="width=device-width, initial-scale=1" name="viewport" />
+  <title>KazinDMC CRM</title>
+  <?php include('admin_head_css.php'); ?>
+  <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/themes/smoothness/jquery-ui.css">
+
+  <script src="https://cdn.rawgit.com/harvesthq/chosen/gh-pages/chosen.jquery.min.js"></script>
+  <link href="https://cdn.rawgit.com/harvesthq/chosen/gh-pages/chosen.min.css" rel="stylesheet" />
+  <style>
+    .hide-accessible {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<!-- END HEAD -->
+
+
+<body class="page-header-fixed sidemenu-closed-hidelogo page-content-white page-md header-white dark-sidebar-color logo-dark">
+
+  <div class="page-wrapper">
+    <!-- start header -->
+    <?php include('header.php'); ?>
+    <!-- end header -->
+    <!-- start page container -->
+    <div class="page-container">
+      <!-- start sidebar menu -->
+      <?php include('side_bar.php'); ?>
+      <!-- end sidebar menu -->
+      <!-- start page content -->
+      <div class="page-content-wrapper">
+        <div class="page-content">
+          <div class="page-bar">
+            <div class="page-title-breadcrumb">
+              <div class=" pull-left">
+                <div class="page-title">Add / Edit Hotel Room Category</div>
+              </div>
+              <ol class="breadcrumb page-breadcrumb pull-right">
+                <li><i class="fa fa-home"></i>&nbsp;<a class="parent-item" href="<?= base_url(); ?>dashboard">Home</a>&nbsp;<i class="fa fa-angle-right"></i>
+                </li>
+                <li class="active">Add Hotel</li>
+              </ol>
+            </div>
+          </div>
+          <?php echo $this->session->flashdata('message');
+          unset($_SESSION['message']); ?>
+          <div class="row">
+            <div class="col-md-12">
+              <div class="card card-box">
+                <div class="card-head">
+                  <header>All Room Categories</header>
+                  <div class="tools">
+                    <a href="#" data-toggle="modal" data-target="#modalAddCategory" class="btn btn-info" style="padding:6px;" id="add-category"><i class="fa fa-plus"></i>
+                      Add Category</a>
+                    <a href="all-hotel" class="btn btn-success" style="margin:0px !important;"><i class="fa fa-file-text-o"></i>
+                      Hotels List</a>
+                    <a href="#" data-toggle="modal" data-target="#modalAdd" class="btn  btn-info" style="padding:6px;">Import CSV</a>
+                    <a href="hotel-pricing-download?hotel_id=<?= $this->input->get('hotel_id'); ?>" class="btn  btn-default" style="padding:6px;">Export to excel</a>
+                    <a class="t-collapse btn-color fa fa-chevron-down" href="javascript:;"></a>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="table-scrollable">
+                    <table class="table table-hover table-checkable order-column full-width" id="example4">
+                      <thead>
+                        <tr>
+                          <th class="center">Sr.No</th>
+                          <th class="center">Category Name</th>
+                          <th class="center">Max Accomodation</th>
+                          <th class="center">Number Of Adults</th>
+                          <th class="center">Number Of Childs</th>
+                          <th class="center">Child Bed Option</th>
+                          <th class="center">Status</th>
+                          <th class="center">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <?php
+                        $i = 1;
+                        if (!empty($categories)) {
+                          foreach ($categories as $list) {
+                        ?>
+                            <tr class="odd gradeX">
+                              <td class="center"><?= $i++ ?></td>
+                              <td class="center">
+                                <?php
+                                echo ucwords(strtolower($list->category_name));
+                                ?>
+                              </td>
+                              <td class="center"><?= $list->max_accomodation ?></td>
+                              <td class="center"><?= $list->number_adults ?></td>
+                              <td class="center"><?= $list->number_childs ?></td>
+                              <td class="center">
+                                <?= ($list->child_bed <> '') ? ucfirst(str_replace('_', ' ', $list->child_bed)) : ''; ?>
+                              </td>
+                              <!--td style="text-align:center;"><a
+                                  href="<?php //echo base_url('room-category-cost?hotel_id=' . $this->input->get('hotel_id') . '&category_id=' . base64_encode($list->id)); 
+                                        ?>"
+                                  class="" title="Cost List"><i class="fa fa-money" aria-hidden="true"></i></a></td-->
+                              <td class="center">
+                                <?= ($list->status === 'active') ? '<a class="btn btn-success btn-xs">' . ucfirst($list->status) . '</a>' : '<a class="btn btn-warning btn-xs">' . ucfirst($list->status) . '</a>';
+                                ?> </td>
+                              <td class="center">
+                                <!-- <button class="btn btn-primary btn-xs pricing" data-adults="<?= $list->number_adults ?>" data-child="<?= $list->number_childs ?>" data-cat-name="<?php echo $list->category_name; ?>" data-cat-id="<?php echo base64_encode($list->id); ?> " data-hotel-id="<?php echo base64_encode($list->hotel_id); ?>" data-child-bed="<?php echo $list->child_bed; ?>" title="Pricing" style="padding:4px 4px;">Prices</button> -->
+                                <a href="#" data-toggle="modal" data-target="#modalAddCategory" title="Edit" class="btn btn-tbl-edit btn-xs"
+                                  data-category_id="<?php echo base64_encode($list->id); ?>"
+                                  data-hotel_id="<?php echo base64_encode($list->hotel_id); ?>">
+                                  <i class="fa fa-edit"></i>
+                                </a>
+                              </td>
+                            </tr>
+                        <?php }
+                        } ?>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- end page content -->
+        </div>
+        <!-- end page container -->
+
+        <div class="modal fade" id="modalAdd" role="dialog">
+          <div class="modal-dialog modal-md">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h4 class="modal-title" id="title-id">Import CSV</h4>
+                <button type="button" class="close" data-dismiss="modal" id="close-restaurant">&times;</button>
+              </div>
+              <div class="modal-body">
+                <div class="row">
+                  <div class="col-md-12">
+                    <div id="response-messages" class="text-center"></div>
+                    <div id="msgDiv"></div>
+                    <form enctype="multipart/form-data" action="<?= base_url() . 'csv-upload?hotel_id=' . $this->input->get('hotel_id') ?>" method="post">
+                      <div class="card-body row">
+                        <div class="col-lg-9 p-t-20">
+                          <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                            <input type="file" id="csv_file" class="mdl-textfield__input" name="csv_file" required>
+                            <label class="mdl-textfield__label ml-3">File Upload</label>
+                          </div>
+                        </div>
+
+                        <div class="offset-1 col-lg-2 p-t-20" style="margin-top:20px;">
+                          <button type="submit" class="btn btn-primary" id="">Submit</button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal fade" id="modalAddCategory" role="dialog">
+          <div class="modal-dialog modal-lg">
+            <div class="modal-content" style="padding: 15px;">
+              <div class="modal-header">
+                <h4 class="modal-title" id="title-id">
+                  <h4><?php echo empty($category_costing) ? 'Add' : 'Edit'; ?>
+                    Room Category</h4>
+                  <button type="button" class="close" data-dismiss="modal" id="close-modal">&times;</button>
+              </div>
+              <div class="modal-body">
+                <?php // echo form_open_multipart(current_url() . '?' . $_SERVER['QUERY_STRING'], ['id' => 'form_Data']); 
+                ?>
+                <form id="form_Data" enctype="multipart/form-data" method="POST" action="<?php echo current_url() . '?' . $_SERVER['QUERY_STRING'] ?>">
+                  <div class="row">
+                    <div class="col-lg-4 p-t-20">
+                      <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                        <?php echo form_input(['name' => 'category_name', 'id' => 'category_name', 'class' => 'mdl-textfield__input', 'required' => 'required', 'value' => isset($category->category_name) ? $category->category_name : set_value('category_name')]); ?>
+                        <label class="mdl-textfield__label">Category Name</label>
+                        <?php echo form_error('category_name'); ?>
+                      </div>
+                    </div>
+
+                    <div class="col-lg-4 p-t-20">
+                      <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                        <?php echo form_input(['name' => 'room_size', 'id' => 'room_size', 'class' => 'mdl-textfield__input', 'value' => isset($category->room_size) ? $category->room_size : set_value('room_size')]); ?>
+                        <label class="mdl-textfield__label">Room Size</label>
+                        <?php echo form_error('room_size'); ?>
+                      </div>
+                    </div>
+
+                    <div class="col-lg-4 p-t-20">
+                      <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                        <?php echo form_input(['type' => 'text', 'min' => '0', 'name' => 'max_accomodation', 'id' => 'max_accomodation', 'required' => 'required', 'class' => 'mdl-textfield__input', 'value' => isset($category->max_accomodation) ? $category->max_accomodation : set_value('max_accomodation')]) ?>
+                        <label class="mdl-textfield__label">Max Accomodation</label>
+                        <?php echo form_error('max_accomodation'); ?>
+                      </div>
+                    </div>
+
+                    <div class="col-lg-4 p-t-20">
+                      <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                        <?php echo form_input(['type' => 'text', 'min' => '0', 'name' => 'adult_number', 'id' => 'adult_number', 'required' => 'required', 'class' => 'mdl-textfield__input', 'value' => isset($category->number_adults) ? $category->number_adults : set_value('adult_number')]) ?>
+                        <label class="mdl-textfield__label">Number Of Adults</label>
+                        <?php echo form_error('adult_number'); ?>
+                      </div>
+                    </div>
+
+                    <div class="col-lg-4 p-t-20">
+                      <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                        <?php echo form_input(['type' => 'text', 'min' => '0', 'name' => 'child_number', 'id' => 'child_number', 'required' => 'required', 'class' => 'mdl-textfield__input', 'value' => isset($category->number_childs) ? $category->number_childs : set_value('child_number')]); ?>
+                        <label class="mdl-textfield__label">Number Of Child</label>
+                        <?php echo form_error('child_number'); ?>
+                      </div>
+                    </div>
+
+                    <div class="col-lg-4 p-t-20">
+                      <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width is-focused">
+                        <select name="child_bed" id="child_bed" class="mdl-textfield__input" style="padding-top:13px;">
+                          <option value="">Select..</option>
+                          <option value="CWB" <?php echo (isset($category->child_bed) && $category->child_bed == 'CWB') ? 'selected="selected"' : ''; ?>>
+                            Child With Bed</option>
+                          <option value="CNB" <?php echo (isset($category->child_bed) && $category->child_bed == 'CNB') ? 'selected="selected"' : ''; ?>>
+                            Child No Bed</option>
+                        </select>
+                        <label class="mdl-textfield__label">Child Bed</label>
+                        <?php echo form_error('child_bed'); ?>
+                      </div>
+                    </div>
+
+                    <?php if (empty($category_costing)): ?>
+                      <div class="col-lg-6 p-t-20">
+                        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                          <?php echo form_input(['type' => 'text', 'name' => 'adultprice_with_breakfast[]', 'id' => 'adultprice_with_breakfast', 'placeholder' => 'Price', 'class' => 'mdl-textfield__input', 'value' => '', 'required' => 'required']) ?>
+                          <label class="mdl-textfield__label adult_label_name">Single Occupancy Price</label>
+                          <?php echo form_error('adultprice_with_breakfast'); ?>
+                        </div>
+                      </div>
+
+                      <div id="childPriceContainer" class="col-lg-6 p-t-20" style="display: none;">
+                        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                          <?php echo form_input(['type' => 'text', 'name' => 'childprice_with_breakfast[]', 'id' => 'childprice_with_breakfast', 'placeholder' => 'Price', 'class' => 'mdl-textfield__input', 'value' => '']) ?>
+                          <label class="mdl-textfield__label child_label_name">Child Occupancy Price</label>
+                          <?php echo form_error('childprice_with_breakfast'); ?>
+                        </div>
+                      </div>
+
+                      <div id="adultPriceContainer" class="col-lg-6">
+                        <!-- Dynamically added adult price fields will appear here -->
+                      </div>
+
+                    <?php endif; ?>
+
+                    <?php if (!empty($category_costing)): ?>
+                      <!-- Show adult price for person_count == 1 -->
+                      <?php foreach ($category_costing as $price): ?>
+                        <?php if ($price->type === 'adult' && $price->person_count == 1): ?>
+                          <div class="col-lg-6 p-t-20">
+                            <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                              <input type="number" name="adultprice_with_breakfast[]" class="mdl-textfield__input" placeholder="Price" value="<?php echo $price->price_with_breakfast; ?>" required>
+                              <label class="mdl-textfield__label">Single Occupancy Price</label>
+                            </div>
+                          </div>
+                        <?php endif; ?>
+                      <?php endforeach; ?>
+
+                      <!-- Show child price for person_count == 1 statically -->
+                      <?php foreach ($category_costing as $price): ?>
+                        <?php if ($price->type === 'child' && $price->person_count == 1 && $price->child_bed === 'CWB'): ?>
+                          <div id="childPriceContainer" class="col-lg-6 p-t-20">
+                            <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                              <input type="number" name="childprice_with_breakfast[]" class="mdl-textfield__input" placeholder="Price" value="<?php echo $price->price_with_breakfast; ?>" required>
+                              <label class="mdl-textfield__label">Child Occupancy Price</label>
+                            </div>
+                          </div>
+                        <?php endif; ?>
+                      <?php endforeach; ?>
+
+                      <div class="col-lg-6 p-t-20">
+                        <!-- Dynamically show other person counts for both adult and child -->
+                        <?php foreach ($category_costing as $price): ?>
+                          <?php if (($price->type === 'adult') && $price->person_count > 1): ?>
+                            <div class="col-lg-12 p-t-20">
+                              <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label txt-full-width">
+                                <?php
+                                // Determine label based on person_count
+                                $label = ($price->person_count == 2) ? "Double Occupancy Price" : (($price->person_count == 3) ? "Triple Occupancy Price" : "Four Occupancy Price");
+                                ?>
+                                <input type="number" name="<?php echo $price->type === 'adult' ? 'adultprice_with_breakfast[]' : 'childprice_with_breakfast[]'; ?>" class="mdl-textfield__input" placeholder="Price" value="<?php echo $price->price_with_breakfast; ?>" required>
+                                <label class="mdl-textfield__label"><?php echo $label; ?></label>
+                              </div>
+                            </div>
+                          <?php endif; ?>
+                        <?php endforeach; ?>
+                      </div>
+
+                      <div id="adultPriceContainerDynamic" class="col-lg-6">
+                        <!-- Dynamically added adult price fields will appear here -->
+                      </div>
+                    <?php endif; ?>
+
+
+                    <div class="col-lg-12 p-t-20 text-center">
+                      <?php echo form_submit(['name' => 'submit', 'id' => 'submit', 'class' => 'mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect m-b-10 m-r-20 btn-pink', 'value' => 'Submit']); ?>
+                    </div>
+
+                  </div>
+                  <?php // echo form_close(); 
+                  ?>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- start footer -->
+        <?php include('admin_footer.php'); ?>
+        <!-- end footer -->
+      </div>
+      <!-- start js include path -->
+      <?php include('admin_footer_js.php'); ?>
+      <!-- end js include path -->
+
+
+      <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+      <!-- jQuery UI -->
+      <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js"></script>
+      <script src="assets/js/bootstrap.js"></script>
+
+      <script>
+        function check_total() {
+          if ((parseInt($("#max_accomodation").val()) < parseInt($("#adult_number").val())) || (parseInt($("#max_accomodation").val()) - parseInt($("#child_number").val()) == 0)) {
+            alert("Accomodation must be equal to number of adults and greater than number of child.");
+            return false;
+          }
+        }
+
+        $(document).ready(function() {
+
+
+          $("#type").on("change", function() {
+            $("#rights").css("display", "none");
+            if ($(this).val() === "2") {
+              $("#rights").css("display", "block");
+            }
+          });
+
+          $("#child_number").on("keyup", function() {
+            $("#child_bed option[value='CNB']").removeAttr('disabled');
+            if ($(this).val() > 1) {
+              $("#child_bed option[value='CNB']").attr('disabled', true);
+              $("#child_bed").val("CWB");
+            }
+          })
+
+        });
+
+        $(document).ready(function() {
+
+          $("#country").autocomplete({
+            source: function(request, response) {
+              // Fetch data
+              $.ajax({
+                url: "<?= base_url() ?>admin/company/get_country_ajax",
+                type: 'post',
+                dataType: "json",
+                data: {
+                  search: request.term
+                },
+                success: function(data) {
+
+                  response(data);
+                }
+              });
+            },
+            select: function(event, ui) {
+              // Set selection
+              $('#country').val(ui.item.label); // display the selected text
+              $('#country_id').val(ui.item.country_id); // save selected id to input
+
+              return false;
+            }
+          });
+
+          $("#state").autocomplete({
+            source: function(request, response) {
+              // Fetch data
+              $.ajax({
+                url: "<?= base_url() ?>admin/company/get_state_ajax",
+                type: 'post',
+                dataType: "json",
+                data: {
+                  search: request.term,
+                  country_id: $('#country_id').val()
+                },
+                success: function(data) {
+
+                  response(data);
+                }
+              });
+            },
+            select: function(event, ui) {
+              // Set selection
+              $('#state').val(ui.item.label); // display the selected text
+              $('#state_id').val(ui.item.state_id); // save selected id to input
+
+              return false;
+            }
+          });
+
+          $("#city").autocomplete({
+            source: function(request, response) {
+              // Fetch data
+              $.ajax({
+                url: "<?= base_url() ?>admin/company/get_city_ajax",
+                type: 'post',
+                dataType: "json",
+                data: {
+                  search: request.term,
+                  state_id: $('#state_id').val()
+                },
+                success: function(data) {
+
+                  response(data);
+                }
+              });
+            },
+            select: function(event, ui) {
+              // Set selection
+              $('#city').val(ui.item.label); // display the selected text
+              //   $('#company_id').val(ui.item.company_id); // save selected id to input
+
+              return false;
+            }
+          });
+        });
+      </script>
+
+      <script>
+        document.addEventListener("DOMContentLoaded", function() {
+          // Get references to relevant fields
+          const maxAccomodation = document.getElementById("max_accomodation");
+          const adultNumber = document.getElementById("adult_number");
+          const childNumber = document.getElementById("child_number");
+          const adultPriceContainer = document.getElementById("adultPriceContainer");
+          const childBedSelect = document.getElementById("child_bed");
+          const childPriceContainer = document.getElementById("childPriceContainer");
+
+          function updateMaxAccomodation() {
+            const adultValue = Math.min(parseInt(adultNumber.value) || 0, 4);
+            const childValue = Math.min(parseInt(childNumber.value) || 0, 1);
+            const totalOccupancy = adultValue + childValue;
+
+            maxAccomodation.value = totalOccupancy;
+            generateAdultPriceFields(adultValue);
+          }
+
+          function generateAdultPriceFields(count) {
+            // Ensure adultPriceContainer exists before attempting to modify its content
+            if (adultPriceContainer) {
+              adultPriceContainer.innerHTML = ""; // Clear existing fields
+
+              for (let i = 2; i <= count; i++) {
+                const wrapper = document.createElement("div");
+                wrapper.classList.add("col-lg-12", "p-t-20");
+
+                const field = document.createElement("div");
+                field.classList.add("mdl-textfield", "mdl-js-textfield", "mdl-textfield--floating-label", "txt-full-width");
+
+                let label = i === 2 ? "Double Occupancy Price" : i === 3 ? "Triple Occupancy Price" : "Four Occupancy Price";
+
+                field.innerHTML = `
+          <input type="number" name="adultprice_with_breakfast[]" class="mdl-textfield__input" placeholder="Price" required>
+          <label class="mdl-textfield__label">${label}</label>
+        `;
+                wrapper.appendChild(field);
+                adultPriceContainer.appendChild(wrapper);
+              }
+            }
+          }
+
+          if (childBedSelect && childPriceContainer) {
+            childBedSelect.addEventListener("change", function() {
+              childPriceContainer.style.display = childBedSelect.value === "CWB" ? "block" : "none";
+            });
+          }
+
+          if (adultNumber) {
+            adultNumber.addEventListener("input", function() {
+              adultNumber.value = Math.min(parseInt(adultNumber.value) || 0, 4);
+              updateMaxAccomodation();
+            });
+          }
+
+          if (childNumber) {
+            childNumber.addEventListener("input", updateMaxAccomodation);
+          }
+
+          updateMaxAccomodation();
+
+          if (childPriceContainer && childBedSelect) {
+            childPriceContainer.style.display = childBedSelect.value === "CWB" ? "block" : "none";
+          }
+
+          // Event listener for the 'Add Category' button
+          document.getElementById('add-category')?.addEventListener('click', function(e) {
+            e.preventDefault();
+
+            // Reset the form
+            $('#form_Data')[0].reset();
+
+            // Update the URL to remove 'category_id'
+            const url = new URL(window.location.href);
+            url.searchParams.delete('category_id');
+            history.replaceState(null, '', url.href);
+
+            // Use sessionStorage to indicate that the modal should open after reload
+            sessionStorage.setItem('openModal', 'true');
+
+            // Reload the page
+            location.reload(true);
+          });
+
+          // Event listener for the 'Edit' buttons
+          // Handle the button click event
+          document.querySelectorAll('.btn.btn-tbl-edit').forEach(function(element) {
+            element.addEventListener('click', function(event) {
+              event.preventDefault();
+
+              // Reset the form
+              $('#form_Data')[0].reset();
+
+              const categoryId = this.getAttribute('data-category_id');
+              const hotelId = this.getAttribute('data-hotel_id');
+
+              // Clean up the current URL
+              let currentUrl = window.location.href;
+              currentUrl = currentUrl.replace(/(&|\?)category_id=[^&]*/g, '');
+              currentUrl = currentUrl.replace(/(&|\?)hotel_id=[^&]*/g, '');
+
+              // Construct the new URL
+              const separator = currentUrl.includes('?') ? '&' : '?';
+              const newUrl = `${currentUrl}${separator}hotel_id=${hotelId}&category_id=${categoryId}`;
+
+              // Use sessionStorage to open the modal after reload
+              sessionStorage.setItem('openModal', 'true');
+
+              // Update the history state
+              window.history.pushState(null, '', newUrl);
+
+              // Refresh the page
+              location.reload(true);
+            });
+          });
+
+          // After page reload, check sessionStorage
+          window.addEventListener('load', function() {
+            if (sessionStorage.getItem('openModal')) {
+              // Open the modal
+              $('#modalAddCategory').modal('show');
+
+              // Check the adult number and create input fields if necessary
+              const adultInput = document.getElementById('adult_number');
+              const previousAdultNumber = parseInt(adultInput.value) || 0;
+
+              // Add listener to adult number input
+              adultInput.addEventListener('input', function() {
+                const currentAdultNumber = parseInt(this.value) || 0;
+                const difference = currentAdultNumber - previousAdultNumber;
+
+                // Add or remove fields based on the difference
+                const container = document.getElementById('adultPriceContainerDynamic');
+
+                // Function to add new fields
+                // Function to add new fields
+                function addFields(count) {
+                  for (let i = 0; i < count; i++) {
+                    const newFieldIndex = previousAdultNumber + i + 1; // 1-based index
+
+                    // Create the wrapper div
+                    const wrapper = document.createElement("div");
+                    wrapper.classList.add("col-lg-12", "p-t-20");
+
+                    // Create the new input field container
+                    const newInputField = document.createElement('div');
+                    newInputField.classList.add('mdl-textfield', 'mdl-js-textfield', 'mdl-textfield--floating-label', 'txt-full-width');
+
+                    // Determine the label text based on newFieldIndex
+                    let occupancyLabel = newFieldIndex === 1 ? 'Single' :
+                     newFieldIndex === 2 ? 'Double' :
+                     newFieldIndex === 3 ? 'Triple' :
+                     'Four'; // Fallback for any number greater than 3
+
+
+                    // Set the innerHTML to show the label followed by the input field
+                    newInputField.innerHTML = `
+            <label class="mdl-textfield__label adult_label_name">${occupancyLabel} Price</label>
+            <input type="text" name="adultprice_with_breakfast[]" id="adultprice_with_breakfast_${newFieldIndex}" placeholder="Price" class="mdl-textfield__input" required>
+        `;
+
+                    // Append the new input field to the wrapper
+                    wrapper.appendChild(newInputField);
+
+                    // Append the wrapper to the container
+                    container.appendChild(wrapper);
+                  }
+                }
+
+                // Add new fields if needed
+                if (difference > 0) {
+                  addFields(difference);
+                } else if (difference < 0) {
+                  // Remove fields if the number decreased
+                  const fieldsToRemove = Math.abs(difference);
+                  const existingFields = container.querySelectorAll('.mdl-textfield');
+                  for (let i = 0; i < fieldsToRemove && existingFields.length > 0; i++) {
+                    existingFields[existingFields.length - 1].remove();
+                  }
+                }
+
+                // Update the previous adult number to the current value
+                previousAdultNumber = currentAdultNumber;
+              });
+
+              // Remove the key from sessionStorage after processing
+              sessionStorage.removeItem('openModal');
+            }
+          });
+
+
+          $('#close-modal').on('click', function(e) {
+            $('#form_Data')[0].reset();
+            // alert('hi')
+            location.reload(true);
+          });
+        });
+      </script>
+
+</body>
+
+</html>

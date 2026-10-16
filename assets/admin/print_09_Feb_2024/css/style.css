@@ -1,0 +1,191 @@
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  font-size: 100%;
+  vertical-align: baseline;
+}
+
+
+html {
+  line-height: 1;
+}
+
+ol, ul {
+  list-style: none;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+caption, th, td {
+  text-align: left;
+  font-weight: normal;
+  vertical-align: middle;
+}
+
+q, blockquote {quotes: none;}
+q:before, q:after, blockquote:before, blockquote:after {
+  content: "";
+  content: none;
+}
+
+a img {border: none;}
+
+article, aside, details, figcaption, figure, footer, header, hgroup, main, menu, nav, section, summary {
+  display: block;
+}
+
+body {
+  font-family: 'Maven Pro', sans-serif;
+  font-size: 16px;
+  color: #000;
+  background: #fff;
+}
+
+header {
+  margin-bottom: 2em;
+}
+
+h1 {
+  font-size: 2em;
+  margin: 0 0 1em;
+  padding:30px 0 0 0;
+}
+
+strong {
+  font-weight: 700;
+}
+
+p {
+  line-height: 1.4em;
+}
+
+.print-data{max-width:900px; 
+  padding-right: var(--bs-gutter-x, 0.75rem);
+  padding-left: var(--bs-gutter-x, 0.75rem);
+  margin-right: auto;
+  margin-left: auto;}
+ 
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-right: calc(var(--bs-gutter-x) * -.5);
+  margin-left: calc(var(--bs-gutter-x) * -.5);
+} 
+  .col-lg-auto {
+    flex: 0 0 auto;
+    width: auto;
+  }
+
+  .col-lg-1 {
+    flex: 0 0 auto;
+    width: 8.33333333%;
+  }
+
+  .col-lg-2 {
+    flex: 0 0 auto;
+    width: 16.66666667%;
+  }
+
+  .col-lg-3 {
+    flex: 0 0 auto;
+    width: 25%;
+  }
+
+  .col-lg-4 {
+    flex: 0 0 auto;
+    width: 33.33333333%;
+  }
+
+  .col-lg-5 {
+    flex: 0 0 auto;
+    width: 41.66666667%;
+  }
+
+  .col-lg-6 {
+    flex: 0 0 auto;
+    width: 50%;
+  }
+
+  .col-lg-7 {
+    flex: 0 0 auto;
+    width: 58.33333333%;
+  }
+
+  .col-lg-8 {
+    flex: 0 0 auto;
+    width: 66.66666667%;
+  }
+
+  .col-lg-9 {
+    flex: 0 0 auto;
+    width: 75%;
+  }
+
+  .col-lg-10 {
+    flex: 0 0 auto;
+    width: 83.33333333%;
+  }
+
+  .col-lg-11 {
+    flex: 0 0 auto;
+    width: 91.66666667%;
+  }
+
+  .col-lg-12 {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+
+::-webkit-input-placeholder { /* Edge */ color: #333;}
+::-ms-input-placeholder {color: #333;}
+::placeholder {color: #333;}
+
+.logo-left img{height:40px; margin-left:30px}
+
+.header{background:#191823; margin:0; padding:0px;}
+
+.in-pl{margin: 0 0 10px 0;}
+.in-pl label{margin: 0 0 5px 0;}
+.in-pl .form-select{border: 1px solid #000;}
+
+.print-head{font-size:26px; font-weight:500; text-align:center; margin: 0 0 15px; padding: 15px 0 0 0;}
+.print-sub-head{font-size:14px; font-weight:600; text-decoration:underline; padding:0 15px 10px 0; float:left}
+.field-name{width:49%; display:inline; font-size:14px; font-weight: 700;}
+.lab-data{width:49%; display:inline; font-size:14px;}
+.float-right{float:right; font-size:14px;}
+.float-right strong{font-size:14px;}
+
+.head-space{margin-top:10px}
+
+
+.print-data table, td, th, tr {font-size:14px;
+  border: 1px solid;line-height:normal;
+}
+.print-data table th{ font-weight:600; font-size:14px;line-height:normal;}
+.print-data table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+
+
+
+.print-data .footer{margin-top:30px;}
+.print-data .footer p{padding:15px 0; font-size:14px}
