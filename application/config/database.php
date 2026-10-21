@@ -111,11 +111,10 @@ $query_builder = TRUE;
 
 $db['default'] = array(
     'dsn'      => '',
-    'hostname' => '193.203.184.111',
-    'username' => 'u333427541_kazin_new',   // your DB user
-    'password' => 'Thaver@001',  // your DB password
-    // 'database' => 'kazinoppthaverte_new',   // your DB name
-    'database' => 'u333427541_kazin_new',
+  	'hostname' => '72.61.246.122',
+    'username' => 'crmkazindmc_2026',  
+    'password' => 'Thaver@001%^7LOO', 
+    'database' => 'crmkazindmc_updated',
     'dbdriver' => 'mysqli',
     'dbprefix' => '',
     'pconnect' => FALSE,               // ✅ Enable persistent connections
